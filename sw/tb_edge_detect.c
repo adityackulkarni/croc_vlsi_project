@@ -1,3 +1,27 @@
+// Steps
+
+// 1. It runs the Sobel filter on the same 3x3 image patch:
+
+// 2. Once in software for reference
+
+// 3. Once on hardware accelerator for speed and correctness
+
+// 4. It times both implementations using cycle counters.
+
+// 5. It copies image data to SRAM for accelerator access.
+
+// 6. It uses MMIO registers to communicate with the accelerator.
+
+// 7. It prints results and compares software and hardware outputs.
+
+// 8. It checks if the results match and prints a message accordingly.
+
+
+// tb_edge_detect.c
+
+// Testbench for edge detection using Sobel filter
+// This code runs a Sobel filter on a 3x3 image patch in both software and hardware
+
 #include <stdint.h>
 #include "lib/inc/uart.h"
 #include "lib/inc/print.h"
@@ -63,9 +87,9 @@ int main() {
 
     // --- Comparison ---
     if (sw_match == hw_match) {
-        printf("\n✅ Match: Software and Accelerator results agree.\n");
+        printf("\n Match: Software and Accelerator results agree\n");
     } else {
-        printf("\n❌ Mismatch: Software and Accelerator results differ!\n");
+        printf("\n Mismatch: Software and Accelerator results differ\n");
     }
 
     return 0;
