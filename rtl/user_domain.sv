@@ -54,6 +54,25 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   assign user_error_obi_req              = all_user_sbr_obi_req[UserError];
   assign all_user_sbr_obi_rsp[UserError] = user_error_obi_rsp;
 
+  
+  // Change - 6:
+  // MMIO control signals from/to tbd_accel
+  logic start_reg;
+  logic done_reg;
+  logic match_reg;
+
+
+  // Change - 4:
+
+  // Accelerator subordinate (tbd_accel)
+  sbr_obi_req_t user_tbd_obi_req;
+  sbr_obi_rsp_t user_tbd_obi_rsp;
+
+  assign user_tbd_obi_req              = all_user_sbr_obi_req[UserTbd];
+  // UserTbd is defined in user_pkg.sv
+  assign all_user_sbr_obi_rsp[UserTbd] = user_tbd_obi_rsp;
+
+
 
   //-----------------------------------------------------------------------------------------------
   // Demultiplex to User Subordinates according to address map
@@ -114,5 +133,53 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .obi_req_i  ( user_error_obi_req ),
     .obi_rsp_o  ( user_error_obi_rsp )
   );
+
+
+  // Change - 7:
+
+  // Simple module to map start/done/match to MMIO registers
+
+  // Simple OBI MMIO register interface for tbd_accel
+  obi_simple_mmio #(
+    .ObiCfg     ( SbrObiCfg ),
+    .DataWidth  ( 32        )
+  ) i_tbd_accel_mmio (
+    .clk_i,
+    .rst_ni,
+    .obi_req_i ( user_tbd_obi_req ),
+    .obi_rsp_o ( user_tbd_obi_rsp ),
+
+    // Register-mapped outputs to accelerator
+    .start_o ( start_reg ),
+    .done_i  ( done_reg  ),
+    .match_i ( match_reg )
+  );
+
+
+  // Change - 5:
+  // Instantiate tbd_accel:
+
+  // Connecting it to the system-wide OBI bus
+  // Giving it access to SRAM
+  // Bringing it into the build
+
+  tbd_accel #(
+    .BASE_ADDR(32'h2000_0000)
+  ) i_user_tbd_accel (
+    .clk      ( clk_i        ),
+    .rst_n    ( rst_ni       ),
+
+    // SRAM interface
+    .sram_addr   ( /* connect appropriately or leave unconnected for now */ ),
+    .sram_req    ( /* connect appropriately or leave unconnected */ ),
+    .sram_rdata  ( /* connect appropriately or leave unconnected */ ),
+    .sram_rvalid ( /* connect appropriately or leave unconnected */ ),
+
+    // MMIO interface via OBI bus (connect from demuxed req/rsp)
+    .start ( user_tbd_obi_req.a.wdata[0] ), // Simple example: use wdata[0] as 'start'
+    .done  ( /* optionally wire to a status register */ ),
+    .match ( /* optionally wire to a status register */ )
+  );
+
 
 endmodule
