@@ -51,6 +51,12 @@ int software_sobel(const uint8_t* image) {
     return sum;
 }
 
+static inline uint32_t get_mcycle(void) {
+    uint32_t cycle;
+    __asm__ volatile ("csrr %0, mcycle" : "=r" (cycle));
+    return cycle;
+}
+
 int main() {
     uart_init();
     uart_write_flush();
