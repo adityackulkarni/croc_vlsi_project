@@ -7,7 +7,7 @@
 #pragma once
 
 #include <stdint.h>
-#include "config.h"
+#include "../../config.h"
 
 
 #define GPIO_DIR_REG_OFFSET           0x000

@@ -7,7 +7,7 @@
 #pragma once
 
 #include <stdint.h>
-#include "config.h"
+#include "../../config.h"
 
 // Register offsets
 #define CFG_LOW_REG_OFFSET            0x00

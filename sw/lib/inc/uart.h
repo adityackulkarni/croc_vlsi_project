@@ -8,7 +8,7 @@
 #pragma once
 
 #include <stdint.h>
-#include "config.h"
+#include "../../config.h"
 
 // Registers below can be aligned to a byte, word, dword etc
 // UART_BYTE_ALIGN provides the number of bytes it is aligned to
