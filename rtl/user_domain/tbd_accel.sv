@@ -1,4 +1,23 @@
-// built to detect edges in a grayscale image using a 3x3 Sobel filter, typically used for edge detection in image processing.
+// Built to detect edges in a grayscale image using a 3x3 Sobel filter, typically used for edge detection in image processing.
+
+// Steps:
+
+// 1. Waits for start
+
+// 2. Reads 9 consecutive pixels from SRAM starting at address 128
+
+// 3. Applies a 3x3 Sobel horizontal filter by multiplying each pixel by the kernel and summing results
+
+// 4. Compares accumulated sum with threshold (100)
+
+// 5. Sets match to 1 if threshold exceeded, otherwise 0
+
+// 6. Raises done signal to indicate processing complete
+
+// 7. Waits for next start/reset cycle
+
+
+
 
 module tbd_accel #(
   // Parameter to specify base address of MMIO (not used internally)
