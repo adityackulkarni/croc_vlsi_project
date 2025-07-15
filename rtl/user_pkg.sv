@@ -52,7 +52,7 @@ package user_pkg;
   // Change - 4: Assign region for tbd_accel address
   // Address map rules: tell the address decoder how to route MMIO traffic
   localparam croc_pkg::addr_map_rule_t [NumDemuxSbrRules-1:0] user_addr_map = '{
-    '{ base: 32'h2000_0000, mask: 32'hFFFF_FC00 }  // 1 KB region for tbd_accel
+    '{ idx:0, start_addr: 32'h2000_0000, end_addr: 32'h2000_03FF }  // 1 KB region for tbd_accel
   };
 
 endpackage
