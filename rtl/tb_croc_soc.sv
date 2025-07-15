@@ -323,8 +323,8 @@ module tb_croc_soc #(
     logic   uart_reading_byte;
 
     initial begin
-        uart_rx_i         = 1'b1;
-        uart_reading_byte = 1'b0;
+        uart_rx_i         = 1;
+        uart_reading_byte = 0;
     end
 
     task automatic uart_read_byte(output byte_bt bite);
@@ -441,12 +441,13 @@ module tb_croc_soc #(
 
     initial begin
         $timeformat(-9, 0, "ns", 12); // 1: scale (ns=-9), 2: decimals, 3: suffix, 4: print-field width
-        // configure FST (waveform) dump
+        // configure VCD dump
         `ifdef TRACE_WAVE
-        $dumpfile("croc.fst");
+        $dumpfile("croc.vcd");
         $dumpvars(1,i_croc_soc);
         `endif
 
+        uart_rx_i  = 1'b0;
         fetch_en_i = 1'b0;
         
         // wait for reset
