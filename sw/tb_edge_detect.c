@@ -71,7 +71,8 @@ int main() {
     printf("\n[Software] Starting Sobel filter...\n");
     uint32_t sw_start = get_mcycle();
     int result = software_sobel(image_data);
-    int sw_match = result > 100;
+    int sw_match = (result > 100) ? 1 : 0;
+    // int sw_match = result > 100;
     uint32_t sw_end = get_mcycle();
     printf("[Software] Result: %d (match: %d)\n", result, sw_match);
     printf("[Software] Cycles: %u\n", (unsigned int)(sw_end - sw_start));
@@ -83,6 +84,8 @@ int main() {
 
     ACCEL_START = 1;  // Trigger accelerator
 
+    ACCEL_START = 0;  // Clear start to avoid repeated triggering
+
     // Wait until accelerator sets 'done'
     while (ACCEL_DONE == 0);
 
@@ -90,7 +93,8 @@ int main() {
     int hw_match = ACCEL_MATCH;
 
     printf("[Accelerator] Match: %d\n", hw_match);
-    printf("[Accelerator] Cycles: %lu\n", hw_end - hw_start);
+    printf("[Accelerator] Cycles: %u\n", (unsigned int)(hw_end - hw_start));
+    // printf("[Accelerator] Cycles: %lu\n", hw_end - hw_start);
 
     // --- Comparison ---
     if (sw_match == hw_match) {
