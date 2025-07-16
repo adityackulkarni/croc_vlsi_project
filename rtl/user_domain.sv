@@ -140,20 +140,20 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   // Simple module to map start/done/match to MMIO registers
 
   // Simple OBI MMIO register interface for tbd_accel
-  obi_simple_mmio #(
-    .ObiCfg     ( SbrObiCfg ),
-    .DataWidth  ( 32        )
-  ) i_tbd_accel_mmio (
-    .clk_i,
-    .rst_ni,
-    .obi_req_i ( user_tbd_obi_req ),
-    .obi_rsp_o ( user_tbd_obi_rsp ),
+  // obi_simple_mmio #(
+  //   .ObiCfg     ( SbrObiCfg ),
+  //   .DataWidth  ( 32        )
+  // ) i_tbd_accel_mmio (
+  //   .clk_i,
+  //   .rst_ni,
+  //   .obi_req_i ( user_tbd_obi_req ),
+  //   .obi_rsp_o ( user_tbd_obi_rsp ),
 
     // Register-mapped outputs to accelerator
-    .start_o ( start_reg ),
-    .done_i  ( done_reg  ),
-    .match_i ( match_reg )
-  );
+  //   .start_o ( start_reg ),
+  //   .done_i  ( done_reg  ),
+  //   .match_i ( match_reg )
+  // );
 
 
   // Change - 5:

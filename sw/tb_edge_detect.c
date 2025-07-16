@@ -74,7 +74,8 @@ int main() {
     int sw_match = result > 100;
     uint32_t sw_end = get_mcycle();
     printf("[Software] Result: %d (match: %d)\n", result, sw_match);
-    printf("[Software] Cycles: %lu\n", sw_end - sw_start);
+    printf("[Software] Cycles: %u\n", (unsigned int)(sw_end - sw_start));
+    // printf("[Software] Cycles: %lu\n", sw_end - sw_start);
 
     // --- Accelerator version ---
     printf("\n[Accelerator] Starting hardware accelerator...\n");
@@ -97,6 +98,7 @@ int main() {
     } else {
         printf("\n Mismatch: Software and Accelerator results differ\n");
     }
-
+    
+    printf("Test Done\n");
     return 0;
 }
