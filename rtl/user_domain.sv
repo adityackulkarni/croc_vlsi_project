@@ -57,9 +57,9 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   
   // Change - 6:
   // MMIO control signals from/to tbd_accel
-  logic start_reg;
-  logic done_reg;
-  logic match_reg;
+  // logic start_reg;
+  // logic done_reg;
+  // logic match_reg;
 
 
   // Change - 4:
@@ -68,9 +68,12 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   sbr_obi_req_t user_tbd_obi_req;
   sbr_obi_rsp_t user_tbd_obi_rsp;
 
-  assign user_tbd_obi_req              = all_user_sbr_obi_req[UserTbd];
+  // assign user_tbd_obi_req              = all_user_sbr_obi_req[UserTbd];
   // UserTbd is defined in user_pkg.sv
-  assign all_user_sbr_obi_rsp[UserTbd] = user_tbd_obi_rsp;
+  // assign all_user_sbr_obi_rsp[UserTbd] = user_tbd_obi_rsp;
+
+  assign user_tbd_obi_req = '0; // Don't send any OBI to tbd_accel
+  assign all_user_sbr_obi_rsp[UserTbd] = '0; // Always respond with 0
 
 
 
@@ -163,23 +166,47 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   // Giving it access to SRAM
   // Bringing it into the build
 
-  tbd_accel #(
-    .BASE_ADDR(32'h2000_0000)
-  ) i_user_tbd_accel (
-    .clk      ( clk_i        ),
-    .rst_n    ( rst_ni       ),
+  // tbd_accel #(
+  //   .BASE_ADDR(32'h2000_0000)
+  // ) i_user_tbd_accel (
+  //   .clk      ( clk_i        ),
+  //   .rst_n    ( rst_ni       ),
 
     // SRAM interface
-    .sram_addr   ( /* connect appropriately or leave unconnected for now */ ),
-    .sram_req    ( /* connect appropriately or leave unconnected */ ),
-    .sram_rdata  ( /* connect appropriately or leave unconnected */ ),
-    .sram_rvalid ( /* connect appropriately or leave unconnected */ ),
+  //   .sram_addr   ( /* connect appropriately or leave unconnected for now */ ),
+  //   .sram_req    ( /* connect appropriately or leave unconnected */ ),
+  //   .sram_rdata  ( /* connect appropriately or leave unconnected */ ),
+  //   .sram_rvalid ( /* connect appropriately or leave unconnected */ ),
 
-    // MMIO interface via OBI bus (connect from demuxed req/rsp)
-    .start ( user_tbd_obi_req.a.wdata[0] ), // Simple example: use wdata[0] as 'start'
-    .done  ( /* optionally wire to a status register */ ),
-    .match ( /* optionally wire to a status register */ )
+  //   // MMIO interface via OBI bus (connect from demuxed req/rsp)
+  //   .start ( user_tbd_obi_req.a.wdata[0] ), // Simple example: use wdata[0] as 'start'
+  //   .done  ( /* optionally wire to a status register */ ),
+  //   .match ( /* optionally wire to a status register */ )
+  // );
+
+  // Internal control signal
+  logic accel_done;
+  logic accel_match;
+
+  // Directly instantiate and wire tbd_accel
+  tbd_accel #(
+    .BASE_ADDR(32'h2000_0000) // Optional: unused in hardwired version
+  ) i_user_tbd_accel (
+    .clk        ( clk_i    ),
+    .rst_n      ( rst_ni   ),
+
+    // SRAM interface (replace with real SRAM hookup when ready)
+    .sram_addr   ( /* connect if needed */ ),
+    .sram_req    ( /* connect if needed */ ),
+    .sram_rdata  ( /* connect if needed */ ),
+    .sram_rvalid ( /* connect if needed */ ),
+
+    // Hardwired control
+    .start ( 1'b1 ),         // Start as soon as system comes out of reset
+    .done  ( accel_done ),
+    .match ( accel_match )
   );
+
 
 
 endmodule
