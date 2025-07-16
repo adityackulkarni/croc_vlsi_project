@@ -65,9 +65,8 @@ module tbd_accel #(
             pixel_index_d = pixel_index_q + 1;
             sram_req_d    = 1'b1;
             sram_addr_d   = BASE_ADDR + pixel_index_q + 1;
-          end else begin
+          end else if (pixel_index_q == 8) begin
             state_d = CALC;
-          end
         end
       end
 
