@@ -141,7 +141,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
 
   // Simple OBI MMIO register interface for tbd_accel
   // obi_simple_mmio #(
-  //   .ObiCfg     ( SbrObiCfg ),
+    // .ObiCfg     ( SbrObiCfg ),
   //   .DataWidth  ( 32        )
   // ) i_tbd_accel_mmio (
   //   .clk_i,
