@@ -1,4 +1,9 @@
+// The idea is that this submodule is responsible only for computing Sobel kernels. Memory reads and writes are handles elsewhere.
+// gives us the `FF(...) macro making it easy to have properly defined flip-flops
+`include "common_cells/registers.svh"
+
 module edge_detection_module #(
+  /// Threshold parameter to return binary edge map if needed
   parameter int THRESHOLD = 100
 )(
   // Pixel inputs (signed 8-bit grayscale)
@@ -10,7 +15,7 @@ module edge_detection_module #(
   output logic        edge,                // 1 if edge detected (optional)
   output logic signed [15:0] gx,           // horizontal gradient
   output logic signed [15:0] gy,           // vertical gradient
-  output logic [15:0] magnitude            // |gx| + |gy| (approximate)
+  output logic [15:0] magnitude            // |gx| + |gy| (approximate) THIS WE WRITE TO MEMORY
 );
 
   // Sobel Gx:

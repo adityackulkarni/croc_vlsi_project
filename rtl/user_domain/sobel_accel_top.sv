@@ -1,139 +1,112 @@
-module sobel_accel_top (
-  input  logic         clk,
-  input  logic         rst_n,
+// TOP MODULE
+// NOTE: Since this is a MMIO peripheral for the CPU, it can only be accessed via OBI.
+// Therefore, I think only inputs and outputs to the top module are clock, reset, obi_req and obi_rsp.
 
-  // MMIO interface from CVE2 core
-  input  logic         mmio_req,
-  input  logic [31:0]  mmio_addr,
-  input  logic         mmio_we,
-  input  logic [31:0]  mmio_wdata,
-  output logic [31:0]  mmio_rdata,
-  output logic         mmio_rvalid,
+// gives us the `FF(...) macro making it easy to have properly defined flip-flops
+`include "common_cells/registers.svh"
 
-  // OBI interface to SRAM (as Manager)
-  output logic         obi_req,
-  input  logic         obi_gnt,
-  output logic [31:0]  obi_addr,
-  output logic         obi_we,
-  output logic [3:0]   obi_be,
-  output logic [31:0]  obi_wdata,
-  output logic [3:0]   obi_aid,
-  input  logic         obi_rvalid,
-  input  logic [31:0]  obi_rdata,
-  input  logic         obi_err,
-  input  logic [3:0]   obi_rid
+module sobel_accel_top #(
+  /// The OBI configuration for all ports.
+  parameter obi_pkg::obi_cfg_t           ObiCfg      = obi_pkg::ObiDefaultConfig,
+  /// The request struct.
+  parameter type                         obi_req_t   = logic,
+  /// The response struct.
+  parameter type                         obi_rsp_t   = logic,
+)(
+    /// Clock
+  input  logic clk_i,
+  /// Active-low reset
+  input  logic rst_ni,
+
+  /// OBI request interface
+  input  obi_req_t obi_req_i,
+  /// OBI response interface
+  output obi_rsp_t obi_rsp_o
 );
 
-  // === Parameters ===
-  localparam int IMG_WIDTH     = 28;
-  localparam int IMG_HEIGHT    = 28;
-  localparam logic [31:0] IMG_BASE_ADDR = 32'h1000_0000;
-  localparam int THRESHOLD     = 100;
+// We define registers used to hold the request fields
+logic req_d, req_q;
+logic we_d, we_q;
+logic [ObiCfg.AddrWidth-1:0] addr_d, addr_q;
+logic [ObiCfg.IdWidth-1:0] id_d, id_q;
+logic [ObiCfg.DataWidth-1:0] wdata_d, wdata_q;
 
-  // === MMIO Registers ===
-  logic start_reg, done_reg;
+ // Signals used to create the response
+logic [ObiCfg.DataWidth-1:0] rsp_data; // Data field of the obi response UNCLEAR IF NEEDED
+logic rsp_err; // Error field of the obi response                        UNCLEAR IF NEEDED
 
-  // === MMIO Access ===
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      start_reg <= 1'b0;
-    end else if (mmio_req && mmio_we) begin
-      if (mmio_addr == 32'h2000_0000)  // Write to 'start'
-        start_reg <= mmio_wdata[0];
-    end else if (done_reg) begin
-      // Auto-clear start once done
-      start_reg <= 1'b0;
+
+// Internal signals/registers
+logic [15:0] edge_magnitude_d, edge_magnitude_q; // Edge magnitude that we will compute and write to memory
+
+
+// We create registers for all the signals we defined using a macro
+`FF(req_q, req_d, '0);
+`FF(id_q , id_d , '0);
+`FF(we_q , we_d , '0);
+`FF(wdata_q , wdata_d , '0);
+`FF(addr_q , addr_d , '0);
+`FF(edge_magnitude_q, edge_magnitude_d, '0);
+
+// We assign signals present in obi_req_i to our internal signals
+assign req_d = obi_req_i.req;
+assign id_d = obi_req_i.a.aid;
+assign we_d = obi_req_i.a.we;
+assign addr_d = obi_req_i.a.addr;
+assign wdata_d = obi_req_i.a.wdata;
+
+// Create states of the top level FSM
+typedef enum logic [2:0] {  
+  IDLE,
+  READ,
+  COMPUTE,
+  WRITE,
+  DONE
+} state_t;
+
+// Declare the variables for current and next state
+state_t state_q, state_d; 
+
+// Create a top level FSM
+always_ff @(posedge clk_i or negedge rst_ni) begin
+  if (!rst_ni) begin
+    state_q <= IDLE;
     end
-  end
+  else begin 
+    state_q <= state_d;
+    end 
+  end 
 
-  // === MMIO Readback ===
-  always_comb begin
-    mmio_rdata  = 32'b0;
-    mmio_rvalid = 1'b0;
-    if (mmio_req && !mmio_we) begin
-      mmio_rvalid = 1'b1;
-      case (mmio_addr)
-        32'h2000_0004: mmio_rdata = {31'b0, done_reg};  // Done flag
-        default:       mmio_rdata = 32'hDEADBEEF;
-      endcase
+always_comb begin
+  state_d = state_q;
+  case (state_q) // case on current state
+    IDLE: begin
+    end 
+    READ: begin
+    end 
+    COMPUTE: begin
+    end 
+    WRITE: begin 
     end
-  end
+    DONE: begin 
+    end 
+    default: begin 
+    end 
+  endcase 
+end
+// TODO 1 - Instantiate OBI reader submodule
+// TODO 2 - Instantiate EDM submodule
+// TODO 3 - Instantiate OBI writer submodule
 
-  // === Internal Wires ===
-  logic        read_req, write_req;
-  logic [31:0] addr, write_data;
-  logic [31:0] read_data;
-  logic        read_valid, write_ready;
-
-  logic        valid_pixels;
-  logic signed [7:0] p00, p01, p02,
-                     p10,      p12,
-                     p20, p21, p22;
-
-  logic [15:0] sobel_result;
-  logic        edge_unused;
-  logic signed [15:0] gx_unused, gy_unused;
-
-  // === FSM Controller ===
-  controller ctrl (
-    .clk         (clk),
-    .rst_n       (rst_n),
-    .start       (start_reg),
-    .done        (done_reg),
-
-    .read_req    (read_req),
-    .write_req   (write_req),
-    .addr        (addr),
-    .write_data  (write_data),
-    .read_data   (read_data),
-    .read_valid  (read_valid),
-    .write_ready (write_ready),
-
-    .valid_pixels(valid_pixels),
-    .p00(p00), .p01(p01), .p02(p02),
-    .p10(p10),           .p12(p12),
-    .p20(p20), .p21(p21), .p22(p22),
-    .result     (sobel_result)
-  );
-
-  // === OBI Master Interface ===
-  obi_mimo obi (
-    .clk         (clk),
-    .rst_n       (rst_n),
-    .read_req    (read_req),
-    .write_req   (write_req),
-    .addr        (addr),
-    .wdata       (write_data),
-    .read_done   (read_valid),
-    .write_done  (write_ready),
-    .rdata       (read_data),
-
-    .obi_req     (obi_req),
-    .obi_gnt     (obi_gnt),
-    .obi_addr    (obi_addr),
-    .obi_we      (obi_we),
-    .obi_be      (obi_be),
-    .obi_wdata   (obi_wdata),
-    .obi_aid     (obi_aid),
-
-    .obi_rvalid  (obi_rvalid),
-    .obi_rdata   (obi_rdata),
-    .obi_err     (obi_err),
-    .obi_rid     (obi_rid)
-  );
-
-  // === Sobel Core ===
-  edge_detection_module #(
-    .THRESHOLD (THRESHOLD)
-  ) sobel_core (
-    .p00(p00), .p01(p01), .p02(p02),
-    .p10(p10),           .p12(p12),
-    .p20(p20), .p21(p21), .p22(p22),
-    .use_threshold(1'b0),
-    .edge      (edge_unused),
-    .gx        (gx_unused),
-    .gy        (gy_unused),
-    .magnitude (sobel_result)
-  );
+// Below we have the final part. Computation is finished and we can signal to CPU that edge detection is done.
+// Wire the response
+// A channel
+assign obi_rsp_o.gnt = obi_req_i.req;
+// R channel:
+assign obi_rsp_o.rvalid = req_q;
+assign obi_rsp_o.r.rdata = rsp_data;
+assign obi_rsp_o.r.rid = id_q;
+assign obi_rsp_o.r.err = rsp_err;
+assign obi_rsp_o.r.r_optional = '0;
 
 endmodule

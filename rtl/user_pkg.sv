@@ -7,6 +7,7 @@
 
 `include "register_interface/typedef.svh"
 `include "obi/typedef.svh"
+// NOTE: This file should be done now.
 
 package user_pkg;
 
@@ -16,43 +17,35 @@ package user_pkg;
   
   // None
 
-
   /////////////////////////////////////
   // User Subordinate Address maps ////
   /////////////////////////////////////
 
-  // Change - 1: Change NumUserDomainSubordinates from 0 to 1 as we are adding tbd_accel in user domain 
-  // localparam int unsigned NumUserDomainSubordinates = 0;
-  localparam int unsigned NumUserDomainSubordinates = 1;
-  // Changed this for tbd_accel
+  localparam int unsigned NumUserDomainSubordinates = 1; // This needs to be 1 since we plan only one peripheral
+  
+  // The two lines below are commented out since we are not using User ROM
+  // localparam bit [31:0] UserRomAddrOffset   = croc_pkg::UserBaseAddr; // 32'h2000_0000;
+  // localparam bit [31:0] UserRomAddrRange    = 32'h0000_1000;          // every subordinate has at least 4KB
 
-
-  // MMIO base and range
-  localparam bit [31:0] UserRomAddrOffset   = croc_pkg::UserBaseAddr; // 32'h2000_0000;
-  localparam bit [31:0] UserRomAddrRange    = 32'h0000_1000;          // every subordinate has at least 4KB
-
-
-  // Derived constants for bus muxing
+  // We need to create address map for our Edge Detection Module
+  // We start at the base address of User Domain and allocate 4KB for EDM
+  localparam bit [31:0] UserEDMAddrOffset   = croc_pkg::UserBaseAddr; // 32'h2000_0000;
+  localparam bit [31:0] UserEDMAddrRange    = 32'h0000_1000;          // every subordinate has at least 4KB
+  
   localparam int unsigned NumDemuxSbrRules  = NumUserDomainSubordinates; // number of address rules in the decoder
   localparam int unsigned NumDemuxSbr       = NumDemuxSbrRules + 1; // additional OBI error, used for signal arrays
 
   // Enum for bus indices
   typedef enum int {
-    // Change - 2: Add user tbd for tbd_accel 
-    UserTbd   = 0,  // Your tbd_accel goes here
-    // UserError = 0
-
-    // Change - 3: Change user error as it becomes 2nd
-    UserError = 1 // Change from 0 to 1 as 2 things and this is second one
+    UserError = 0,
+    UserEDM = 1
   } user_demux_outputs_e;
 
   // Address rules given to address decoder
-  // localparam croc_pkg::addr_map_rule_t [NumDemuxSbrRules-1:0] user_addr_map = '0;
-
-  // Change - 4: Assign region for tbd_accel address
-  // Address map rules: tell the address decoder how to route MMIO traffic
+  // UserError does not appear as it will be used as default rule
+  // This was changed for EDM module. Should not require further changes, assuming one peripheral
   localparam croc_pkg::addr_map_rule_t [NumDemuxSbrRules-1:0] user_addr_map = '{
-    '{ base: 32'h2000_0000, mask: 32'hFFFF_FC00 }  // 1 KB region for tbd_accel
+    '{ idx:UserEDM, start_addr: UserEDMAddrOffset, end_addr: UserEDMAddrOffset + UserEDMAddrRange}
   };
 
 endpackage
