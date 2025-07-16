@@ -1,58 +1,108 @@
-// SPDX-License-Identifier: SHL-0.51
-// Simple OBI MMIO register interface
-// Maps start (write-only), done, and match (read-only) bits as MMIO registers
+// obi_simple_mmio.sv
+// Custom MMIO Wrapper for Edge Detection Accelerator using OBI interface
 
 module obi_simple_mmio #(
-  parameter int unsigned DataWidth = 32
-)(
-  input  logic               clk_i,
-  input  logic               rst_ni,
-  
-  // OBI interface
-  input  sbr_obi_req_t       obi_req_i,
-  output sbr_obi_rsp_t       obi_rsp_o,
+  parameter int unsigned BaseAddr = 32'h0000_0000
+) (
+  input  logic        clk_i,
+  input  logic        rst_ni,
 
-  // MMIO control signals
-  output logic               start_o,  // write-only (bit 0)
-  input  logic               done_i,   // read-only (bit 1)
-  input  logic               match_i   // read-only (bit 2)
+  // OBI Bus Interface
+  OBI_BUS.Subordinate mmio_bus,
+
+  // Control and Status
+  output logic        start_o,
+  output logic        clear_o,
+  input  logic        done_i,
+  output logic [31:0] img_base_addr_o,
+  output logic [15:0] img_width_o,
+  output logic [15:0] img_height_o
 );
 
-  import user_pkg::*;
+  typedef enum logic [2:0] {
+    REG_START         = 3'h0,
+    REG_CLEAR         = 3'h1,
+    REG_DONE          = 3'h2,
+    REG_IMG_BASE_ADDR = 3'h3,
+    REG_IMG_WIDTH     = 3'h4,
+    REG_IMG_HEIGHT    = 3'h5
+  } reg_addr_e;
 
-  // Internal register to hold start bit (set on write, cleared by software or auto-clear on write=0)
-  logic start_reg;
+  // Internal registers
+  logic [31:0] img_base_addr_q, img_base_addr_d;
+  logic [15:0] img_width_q, img_width_d;
+  logic [15:0] img_height_q, img_height_d;
+  logic        start_q, start_d;
+  logic        clear_q, clear_d;
 
-  // Default outputs
-  assign start_o = start_reg;
+  // Assign outputs
+  assign img_base_addr_o = img_base_addr_q;
+  assign img_width_o     = img_width_q;
+  assign img_height_o    = img_height_q;
+  assign start_o         = start_q;
+  assign clear_o         = clear_q;
 
-  // OBI response signals
-  sbr_obi_rsp_t rsp;
-  assign obi_rsp_o = rsp;
+  // OBI signal aliases
+  logic        acc_sel;
+  logic [2:0]  reg_addr;
 
-  // Capture OBI transactions
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      start_reg <= 1'b0;
-    end else begin
-      if (obi_req_i.vld && obi_req_i.a.we) begin
-        // Write transaction: only bit 0 affects start register
-        start_reg <= obi_req_i.a.wdata[0];
-      end
-      // Optionally, you can auto-clear start_reg here or keep it set until cleared by software
+  assign acc_sel  = mmio_bus.req && (mmio_bus.addr[31:16] == BaseAddr[31:16]);
+  assign reg_addr = mmio_bus.addr[4+:3];
+
+  // Grant logic
+  assign mmio_bus.gnt = acc_sel;
+
+  // Write logic
+  always_comb begin
+    start_d         = 1'b0;
+    clear_d         = 1'b0;
+    img_base_addr_d = img_base_addr_q;
+    img_width_d     = img_width_q;
+    img_height_d    = img_height_q;
+
+    if (acc_sel && mmio_bus.we) begin
+      unique case (reg_addr)
+        REG_START:         start_d         = 1'b1;
+        REG_CLEAR:         clear_d         = 1'b1;
+        REG_IMG_BASE_ADDR: img_base_addr_d = mmio_bus.wdata;
+        REG_IMG_WIDTH:     img_width_d     = mmio_bus.wdata[15:0];
+        REG_IMG_HEIGHT:    img_height_d    = mmio_bus.wdata[15:0];
+        default: ;
+      endcase
     end
   end
 
-  // Formulate OBI response
+  // Read logic
   always_comb begin
-    rsp.vld   = obi_req_i.vld;
-    rsp.error = 1'b0;
-    rsp.rdata = '0;
+    mmio_bus.rvalid = acc_sel && !mmio_bus.we;
+    mmio_bus.rdata  = 32'h0000_0000;
+    mmio_bus.err    = 1'b0;
 
-    if (obi_req_i.vld && !obi_req_i.a.we) begin
-      // Read transaction: provide done and match in bits 1 and 2
-      rsp.rdata = {29'd0, match_i, done_i, 1'b0};
-      // bit0 is zero on read, bit1=done, bit2=match
+    if (acc_sel && !mmio_bus.we) begin
+      unique case (reg_addr)
+        REG_DONE:          mmio_bus.rdata = {31'b0, done_i};
+        REG_IMG_BASE_ADDR: mmio_bus.rdata = img_base_addr_q;
+        REG_IMG_WIDTH:     mmio_bus.rdata = {16'b0, img_width_q};
+        REG_IMG_HEIGHT:    mmio_bus.rdata = {16'b0, img_height_q};
+        default:           mmio_bus.rdata = 32'hDEAD_BEEF;
+      endcase
+    end
+  end
+
+  // Output handshake handling
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      start_q         <= 1'b0;
+      clear_q         <= 1'b0;
+      img_base_addr_q <= '0;
+      img_width_q     <= '0;
+      img_height_q    <= '0;
+    end else begin
+      start_q         <= start_d;
+      clear_q         <= clear_d;
+      img_base_addr_q <= img_base_addr_d;
+      img_width_q     <= img_width_d;
+      img_height_q    <= img_height_d;
     end
   end
 
