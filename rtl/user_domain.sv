@@ -5,7 +5,6 @@
 // Authors:
 // - Philippe Sauter <phsauter@iis.ee.ethz.ch>
 
-
 module user_domain import user_pkg::*; import croc_pkg::*; #(
   parameter int unsigned GpioCount = 16
 ) (
@@ -13,7 +12,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   input  logic      ref_clk_i,
   input  logic      rst_ni,
   input  logic      testmode_i,
-  
+
   input  sbr_obi_req_t user_sbr_obi_req_i, // User Sbr (rsp_o), Croc Mgr (req_i)
   output sbr_obi_rsp_t user_sbr_obi_rsp_o,
 
@@ -26,61 +25,41 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
 
   assign interrupts_o = '0;  
 
-
-  //////////////////////
-  // User Manager MUX //
-  /////////////////////
-
-  // No manager so we don't need a obi_mux module and just terminate the request properly
   assign user_mgr_obi_req_o = '0;
 
-
-  ////////////////////////////
-  // User Subordinate DEMUX //
-  ////////////////////////////
-
-  // ----------------------------------------------------------------------------------------------
-  // User Subordinate Buses
-  // ----------------------------------------------------------------------------------------------
-  
-  // collection of signals from the demultiplexer
+  // Demux output to subordinates
   sbr_obi_req_t [NumDemuxSbr-1:0] all_user_sbr_obi_req;
   sbr_obi_rsp_t [NumDemuxSbr-1:0] all_user_sbr_obi_rsp;
 
-  // Error Subordinate Bus
   sbr_obi_req_t user_error_obi_req;
   sbr_obi_rsp_t user_error_obi_rsp;
 
-  // Fanout into more readable signals
   assign user_error_obi_req              = all_user_sbr_obi_req[UserError];
   assign all_user_sbr_obi_rsp[UserError] = user_error_obi_rsp;
 
-  
-  // Change - 6:
-  // MMIO control signals from/to tbd_accel
-  // logic start_reg;
-  // logic done_reg;
-  // logic match_reg;
+  // Flattened OBI wires for tbd_accel
+  logic        tbd_req;
+  logic [31:0] tbd_addr;
+  logic        tbd_we;
+  logic [3:0]  tbd_be;
+  logic [31:0] tbd_wdata;
+  logic        tbd_rready;
+  logic        tbd_gnt;
+  logic        tbd_rvalid;
+  logic [31:0] tbd_rdata;
+  logic        tbd_err;
 
+  assign tbd_req     = all_user_sbr_obi_req[UserTbd].req;
+  assign tbd_addr    = all_user_sbr_obi_req[UserTbd].a.addr;
+  assign tbd_we      = all_user_sbr_obi_req[UserTbd].a.we;
+  assign tbd_be      = all_user_sbr_obi_req[UserTbd].a.be;
+  assign tbd_wdata   = all_user_sbr_obi_req[UserTbd].a.wdata;
+  assign tbd_rready  = all_user_sbr_obi_req[UserTbd].r.ready;
 
-  // Change - 4:
-
-  // Accelerator subordinate (tbd_accel)
-  // sbr_obi_req_t user_tbd_obi_req;
-  // sbr_obi_rsp_t user_tbd_obi_rsp;
-
-  assign user_tbd_obi_req              = all_user_sbr_obi_req[UserTbd];
-  // UserTbd is defined in user_pkg.sv
-  assign all_user_sbr_obi_rsp[UserTbd] = user_tbd_obi_rsp;
-
-  // assign user_tbd_obi_req = '0; // Don't send any OBI to tbd_accel
-  // assign all_user_sbr_obi_rsp[UserTbd] = '0; // Always respond with 0
-
-
-
-  //-----------------------------------------------------------------------------------------------
-  // Demultiplex to User Subordinates according to address map
-  //-----------------------------------------------------------------------------------------------
+  assign all_user_sbr_obi_rsp[UserTbd].gnt        = tbd_gnt;
+  assign all_user_sbr_obi_rsp[UserTbd].r.valid    = tbd_rvalid;
+  assign all_user_sbr_obi_rsp[UserTbd].r.rdata    = tbd_rdata;
+  assign all_user_sbr_obi_rsp[UserTbd].r.err      = tbd_err;
 
   logic [cf_math_pkg::idx_width(NumDemuxSbr)-1:0] user_idx;
 
@@ -118,11 +97,6 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .mgr_ports_rsp_i   ( all_user_sbr_obi_rsp )
   );
 
-
-//-------------------------------------------------------------------------------------------------
-// User Subordinates
-//-------------------------------------------------------------------------------------------------
-
   // Error Subordinate
   obi_err_sbr #(
     .ObiCfg      ( SbrObiCfg     ),
@@ -138,88 +112,12 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .obi_rsp_o  ( user_error_obi_rsp )
   );
 
-
-  // Change - 7:
-
-  // Simple module to map start/done/match to MMIO registers
-
-  // Simple OBI MMIO register interface for tbd_accel
-  // obi_simple_mmio #(
-    // .ObiCfg     ( SbrObiCfg ),
-  //   .DataWidth  ( 32        )
-  // ) i_tbd_accel_mmio (
-  //   .clk_i,
-  //   .rst_ni,
-  //   .obi_req_i ( user_tbd_obi_req ),
-  //   .obi_rsp_o ( user_tbd_obi_rsp ),
-
-    // Register-mapped outputs to accelerator
-  //   .start_o ( start_reg ),
-  //   .done_i  ( done_reg  ),
-  //   .match_i ( match_reg )
-  // );
-
-
-  // Change - 5:
-  // Instantiate tbd_accel:
-
-  // Connecting it to the system-wide OBI bus
-  // Giving it access to SRAM
-  // Bringing it into the build
-
-  // tbd_accel #(
-  //   .BASE_ADDR(32'h2000_0000)
-  // ) i_user_tbd_accel (
-  //   .clk      ( clk_i        ),
-  //   .rst_n    ( rst_ni       ),
-
-    // SRAM interface
-  //   .sram_addr   ( /* connect appropriately or leave unconnected for now */ ),
-  //   .sram_req    ( /* connect appropriately or leave unconnected */ ),
-  //   .sram_rdata  ( /* connect appropriately or leave unconnected */ ),
-  //   .sram_rvalid ( /* connect appropriately or leave unconnected */ ),
-
-  //   // MMIO interface via OBI bus (connect from demuxed req/rsp)
-  //   .start ( user_tbd_obi_req.a.wdata[0] ), // Simple example: use wdata[0] as 'start'
-  //   .done  ( /* optionally wire to a status register */ ),
-  //   .match ( /* optionally wire to a status register */ )
-  // );
-
-  // Internal control signal
-  // logic accel_done;
-  // logic accel_match;
-
-  // Directly instantiate and wire tbd_accel
-  // tbd_accel #(
-    // .BASE_ADDR(32'h2000_0000) // Optional: unused in hardwired version
-  // ) i_user_tbd_accel (
-    // .clk        ( clk_i    ),
-    // .rst_n      ( rst_ni   ),
-
-    // SRAM interface (replace with real SRAM hookup when ready)
-    // .sram_addr   ( /* connect if needed */ ),
-    // .sram_req    ( /* connect if needed */ ),
-    // .sram_rdata  ( /* connect if needed */ ),
-    // .sram_rvalid ( /* connect if needed */ ),
-
-    // Hardwired control
-    // .start ( 1'b1 ),         // Start as soon as system comes out of reset
-    // .done  ( accel_done ),
-    // .match ( accel_match )
-  // );
-
-  // CHANGE DONE 16.07.2025
-
-  // ----------------------------------------------------------
-  // Internal control signals for accelerator
-  // ----------------------------------------------------------
+  // Accelerator control and status registers
   logic start_reg;
   logic done_reg;
   logic match_reg;
 
-  // ----------------------------------------------------------
-  // MMIO interface: simple OBI MMIO register interface for tbd_accel
-  // ----------------------------------------------------------
+  // MMIO interface for tbd_accel
   obi_simple_mmio #(
     .ObiCfg     ( SbrObiCfg ),
     .DataWidth  ( 32        )
@@ -227,36 +125,38 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .clk_i     ( clk_i ),
     .rst_ni    ( rst_ni ),
 
-    .obi_req_i ( user_tbd_obi_req ),
-    .obi_rsp_o ( user_tbd_obi_rsp ),
+    .req_i     ( tbd_req     ),
+    .addr_i    ( tbd_addr    ),
+    .we_i      ( tbd_we      ),
+    .be_i      ( tbd_be      ),
+    .wdata_i   ( tbd_wdata   ),
+    .rready_i  ( tbd_rready  ),
 
-    // Register-mapped control signals
+    .gnt_o     ( tbd_gnt     ),
+    .rvalid_o  ( tbd_rvalid  ),
+    .rdata_o   ( tbd_rdata   ),
+    .err_o     ( tbd_err     ),
+
     .start_o   ( start_reg ),
     .done_i    ( done_reg  ),
     .match_i   ( match_reg )
   );
 
-
-  // ----------------------------------------------------------
-  // Instantiate tbd_accel hardware accelerator
-  // ----------------------------------------------------------
+  // Accelerator instantiation
   tbd_accel #(
     .BASE_ADDR(32'h2000_0000)
   ) i_user_tbd_accel (
     .clk        ( clk_i    ),
     .rst_n      ( rst_ni   ),
 
-    // SRAM interface (connect as needed)
-    .sram_addr   ( /* leave unconnected or wire if available */ ),
-    .sram_req    ( /* leave unconnected or wire if available */ ),
-    .sram_rdata  ( /* leave unconnected or wire if available */ ),
-    .sram_rvalid ( /* leave unconnected or wire if available */ ),
+    .sram_addr   ( /* connect as needed */ ),
+    .sram_req    ( /* connect as needed */ ),
+    .sram_rdata  ( /* connect as needed */ ),
+    .sram_rvalid ( /* connect as needed */ ),
 
-    // MMIO control signals connected from simple_mmio registers
-    .start ( start_reg ),
-    .done  ( done_reg  ),
-    .match ( match_reg )
+    .start       ( start_reg ),
+    .done        ( done_reg  ),
+    .match       ( match_reg )
   );
-
 
 endmodule
