@@ -1,59 +1,59 @@
+// SPDX-License-Identifier: SHL-0.51
+// Simple OBI MMIO register interface
+// Maps start (write-only), done, and match (read-only) bits as MMIO registers
+
 module obi_simple_mmio #(
-  parameter int DataWidth = 32,
-  parameter type obi_req_t = logic,
-  parameter type obi_rsp_t = logic
+  parameter int unsigned DataWidth = 32
 )(
-  input  logic clk_i,
-  input  logic rst_ni,
+  input  logic               clk_i,
+  input  logic               rst_ni,
+  
+  // OBI interface
+  input  sbr_obi_req_t       obi_req_i,
+  output sbr_obi_rsp_t       obi_rsp_o,
 
-  input  obi_req_t obi_req_i,
-  output obi_rsp_t obi_rsp_o,
-
-  output logic start_o,
-  input  logic done_i,
-  input  logic match_i
+  // MMIO control signals
+  output logic               start_o,  // write-only (bit 0)
+  input  logic               done_i,   // read-only (bit 1)
+  input  logic               match_i   // read-only (bit 2)
 );
 
-  // MMIO register (only start is writable)
+  import user_pkg::*;
+
+  // Internal register to hold start bit (set on write, cleared by software or auto-clear on write=0)
   logic start_reg;
+
+  // Default outputs
   assign start_o = start_reg;
 
-  // MMIO address map (0 = start, 4 = done, 8 = match)
-  localparam START_ADDR = 32'h0;
-  localparam DONE_ADDR  = 32'h4;
-  localparam MATCH_ADDR = 32'h8;
+  // OBI response signals
+  sbr_obi_rsp_t rsp;
+  assign obi_rsp_o = rsp;
 
-  logic [DataWidth-1:0] rdata_q;
-  logic                 ready_q;
-
-  // MMIO behavior
+  // Capture OBI transactions
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       start_reg <= 1'b0;
-      rdata_q   <= '0;
-      ready_q   <= 1'b0;
     end else begin
-      ready_q <= 1'b0;
-
-      if (obi_req_i.req && obi_req_i.we) begin
-        // Write access
-        if (obi_req_i.addr == START_ADDR)
-          start_reg <= obi_req_i.wdata[0]; // Only LSB matters
-        ready_q <= 1'b1;
-
-      end else if (obi_req_i.req && !obi_req_i.we) begin
-        // Read access
-        case (obi_req_i.addr)
-          DONE_ADDR:  rdata_q <= {{(DataWidth-1){1'b0}}, done_i};
-          MATCH_ADDR: rdata_q <= {{(DataWidth-1){1'b0}}, match_i};
-          default:    rdata_q <= '0;
-        endcase
-        ready_q <= 1'b1;
+      if (obi_req_i.vld && obi_req_i.a.we) begin
+        // Write transaction: only bit 0 affects start register
+        start_reg <= obi_req_i.a.wdata[0];
       end
+      // Optionally, you can auto-clear start_reg here or keep it set until cleared by software
     end
   end
 
-  assign obi_rsp_o.rvalid = ready_q;
-  assign obi_rsp_o.rdata  = rdata_q;
+  // Formulate OBI response
+  always_comb begin
+    rsp.vld   = obi_req_i.vld;
+    rsp.error = 1'b0;
+    rsp.rdata = '0;
+
+    if (obi_req_i.vld && !obi_req_i.a.we) begin
+      // Read transaction: provide done and match in bits 1 and 2
+      rsp.rdata = {29'd0, match_i, done_i, 1'b0};
+      // bit0 is zero on read, bit1=done, bit2=match
+    end
+  end
 
 endmodule
