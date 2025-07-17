@@ -23,6 +23,9 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   output logic [NumExternalIrqs-1:0] interrupts_o // interrupts to core
 );
 
+  // Declare subordinate index for user_edge_accel
+  localparam int unsigned UserEdgeAccel = 1;
+
   assign interrupts_o = '0;  
 
 
@@ -30,8 +33,13 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   // User Manager MUX //
   /////////////////////
 
-  // No manager so we don't need a obi_mux module and just terminate the request properly
-  assign user_mgr_obi_req_o = '0;
+  // We will forward subordinate master requests to the user_mgr interface, so declare internal signals here
+  mgr_obi_req_t edge_accel_mgr_obi_req;
+  mgr_obi_rsp_t edge_accel_mgr_obi_rsp;
+
+  // Forward the subordinate master interface to the user manager interface
+  assign user_mgr_obi_req_o = edge_accel_mgr_obi_req;
+  assign edge_accel_mgr_obi_rsp = user_mgr_obi_rsp_i;
 
 
   ////////////////////////////
@@ -113,6 +121,42 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .testmode_i ( testmode_i      ),
     .obi_req_i  ( user_error_obi_req ),
     .obi_rsp_o  ( user_error_obi_rsp )
+  );
+
+  // User edge accelerator subordinate instantiation
+  user_edge_accel #(
+    .ADDR_WIDTH(SbrObiCfg.AddrWidth),
+    .DATA_WIDTH(SbrObiCfg.DataWidth),
+    .ID_WIDTH(SbrObiCfg.IdWidth)
+  ) i_user_edge_accel (
+    .clk_i(clk_i),
+    .rst_ni(rst_ni),
+
+    // Slave interface from user_domain subordinate demux
+    .sbr_obi_req_i(all_user_sbr_obi_req[UserEdgeAccel].req),
+    .sbr_obi_addr_i(all_user_sbr_obi_req[UserEdgeAccel].a.addr),
+    .sbr_obi_wdata_i(all_user_sbr_obi_req[UserEdgeAccel].a.wdata),
+    .sbr_obi_we_i(all_user_sbr_obi_req[UserEdgeAccel].a.we),
+    .sbr_obi_id_i(all_user_sbr_obi_req[UserEdgeAccel].a.id),
+
+    .sbr_obi_gnt_o(all_user_sbr_obi_req[UserEdgeAccel].gnt),
+    .sbr_obi_rvalid_o(all_user_sbr_obi_rsp[UserEdgeAccel].rvalid),
+    .sbr_obi_rdata_o(all_user_sbr_obi_rsp[UserEdgeAccel].rdata),
+    .sbr_obi_rid_o(all_user_sbr_obi_rsp[UserEdgeAccel].rid),
+    .sbr_obi_err_o(all_user_sbr_obi_rsp[UserEdgeAccel].err),
+
+    // Master interface to SRAM
+    .mgr_obi_req_o(user_mgr_obi_req_o),    // Forwarding master requests directly to SRAM master interface of user_domain
+    .mgr_obi_addr_o(user_mgr_obi_req_o.a.addr),
+    .mgr_obi_wdata_o(user_mgr_obi_req_o.a.wdata),
+    .mgr_obi_we_o(user_mgr_obi_req_o.a.we),
+    .mgr_obi_id_o(user_mgr_obi_req_o.a.id),
+
+    .mgr_obi_gnt_i(user_mgr_obi_rsp_i.gnt),
+    .mgr_obi_rvalid_i(user_mgr_obi_rsp_i.rvalid),
+    .mgr_obi_rdata_i(user_mgr_obi_rsp_i.rdata),
+    .mgr_obi_rid_i(user_mgr_obi_rsp_i.rid),
+    .mgr_obi_err_i(user_mgr_obi_rsp_i.err)
   );
 
 endmodule
