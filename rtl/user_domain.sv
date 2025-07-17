@@ -137,26 +137,26 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .sbr_obi_addr_i(all_user_sbr_obi_req[kUserEdgeAccel].a.addr),
     .sbr_obi_wdata_i(all_user_sbr_obi_req[kUserEdgeAccel].a.wdata),
     .sbr_obi_we_i(all_user_sbr_obi_req[kUserEdgeAccel].a.we),
-    .sbr_obi_id_i(all_user_sbr_obi_req[kUserEdgeAccel].a.id),
+    .sbr_obi_id_i(all_user_sbr_obi_req[kUserEdgeAccel].a.aid),
 
-    .sbr_obi_gnt_o(all_user_sbr_obi_req[kUserEdgeAccel].gnt),
+    .sbr_obi_gnt_o(all_user_sbr_obi_rsp[kUserEdgeAccel].gnt),
     .sbr_obi_rvalid_o(all_user_sbr_obi_rsp[kUserEdgeAccel].rvalid),
-    .sbr_obi_rdata_o(all_user_sbr_obi_rsp[kUserEdgeAccel].rdata),
-    .sbr_obi_rid_o(all_user_sbr_obi_rsp[kUserEdgeAccel].rid),
-    .sbr_obi_err_o(all_user_sbr_obi_rsp[kUserEdgeAccel].err),
+    .sbr_obi_rdata_o(all_user_sbr_obi_rsp[kUserEdgeAccel].r.rdata),
+    .sbr_obi_rid_o(all_user_sbr_obi_rsp[kUserEdgeAccel].r.rid),
+    .sbr_obi_err_o(all_user_sbr_obi_rsp[kUserEdgeAccel].r.err),
 
     // Master interface to SRAM
     .mgr_obi_req_o(user_mgr_obi_req_o),    // Forwarding master requests directly to SRAM master interface of user_domain
     .mgr_obi_addr_o(user_mgr_obi_req_o.a.addr),
     .mgr_obi_wdata_o(user_mgr_obi_req_o.a.wdata),
     .mgr_obi_we_o(user_mgr_obi_req_o.a.we),
-    .mgr_obi_id_o(user_mgr_obi_req_o.a.id),
+    .mgr_obi_id_o(user_mgr_obi_req_o.a.aid),
 
     .mgr_obi_gnt_i(user_mgr_obi_rsp_i.gnt),
     .mgr_obi_rvalid_i(user_mgr_obi_rsp_i.rvalid),
-    .mgr_obi_rdata_i(user_mgr_obi_rsp_i.rdata),
-    .mgr_obi_rid_i(user_mgr_obi_rsp_i.rid),
-    .mgr_obi_err_i(user_mgr_obi_rsp_i.err)
+    .mgr_obi_rdata_i(user_mgr_obi_rsp_i.r.rdata),
+    .mgr_obi_rid_i(user_mgr_obi_rsp_i.r.rid),
+    .mgr_obi_err_i(user_mgr_obi_rsp_i.r.err)
   );
 
 endmodule

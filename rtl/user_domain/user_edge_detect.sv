@@ -51,16 +51,16 @@ module user_edge_accel #(
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       state <= IDLE;
-      sbr_obi_gnt_o <= 1'b0;
-      sbr_obi_rvalid_o <= 1'b0;
-      sbr_obi_err_o <= 1'b0;
+      sbr_obi_gnt_o = 1'b0;
+      sbr_obi_rvalid_o = 1'b0;
+      sbr_obi_err_o = 1'b0;
     end else begin
       state <= next_state;
 
       // Reset default outputs each cycle
-      sbr_obi_gnt_o <= 1'b0;
-      sbr_obi_rvalid_o <= 1'b0;
-      sbr_obi_err_o <= 1'b0;
+      sbr_obi_gnt_o = 1'b0;
+      sbr_obi_rvalid_o = 1'b0;
+      sbr_obi_err_o = 1'b0;
     end
   end
 
