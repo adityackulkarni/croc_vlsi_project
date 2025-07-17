@@ -1,101 +1,63 @@
 #include <stdint.h>
-#include <stdio.h>
-#include "image_data.h"
 
-// Use the same image size as in image_data.h
-#define WIDTH  IMAGE_WIDTH
-#define HEIGHT IMAGE_HEIGHT
-#define IMG_SIZE IMAGE_SIZE
+// Edge Detection Accelerator Registers
+#define EDGE_CTRL_BASE  0x20000000
 
-// MMIO Register Map (adjust base address as per your system)
-#define SOBEL_BASE         0x20000000
-#define SOBEL_IN_ADDR      (*(volatile uint32_t *)(SOBEL_BASE + 0x00))
-#define SOBEL_OUT_ADDR     (*(volatile uint32_t *)(SOBEL_BASE + 0x04))
-#define SOBEL_IMG_SIZE     (*(volatile uint32_t *)(SOBEL_BASE + 0x08))
-#define SOBEL_START        (*(volatile uint32_t *)(SOBEL_BASE + 0x0C))
-#define SOBEL_DONE         (*(volatile uint32_t *)(SOBEL_BASE + 0x10))
+typedef struct {
+    volatile uint32_t src_addr;   // 0x00 - Source image address
+    volatile uint32_t dst_addr;   // 0x04 - Destination address
+    volatile uint32_t width;      // 0x08 - Image width
+    volatile uint32_t height;     // 0x0C - Image height
+    volatile uint32_t enable;     // 0x10 - Enable accelerator
+    volatile uint32_t start;      // 0x14 - Start processing (auto-clears)
+    volatile uint32_t status;     // 0x18 - Status (bit 0 = done)
+} edge_ctrl_t;
 
-// Output buffers
-uint8_t sw_output[IMG_SIZE];
-uint8_t hw_output[IMG_SIZE];
+#define edge_ctrl ((edge_ctrl_t *)EDGE_CTRL_BASE)
 
-// Read 32-bit cycle counter
-static inline uint32_t rdcycle() {
-    uint32_t value;
-    asm volatile ("rdcycle %0" : "=r"(value));
-    return value;
-}
+// Simple test image (8x8 grayscale)
+uint8_t test_image[64] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
+    0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00,
+    0x00, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0x00,
+    0x00, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0x00,
+    0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00,
+    0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
 
-// Simple software Sobel filter (no borders)
-void sobel_sw(uint8_t *in, uint8_t *out, int w, int h) {
-    int gx, gy;
-    for (int y = 1; y < h - 1; ++y) {
-        for (int x = 1; x < w - 1; ++x) {
-            int idx = y * w + x;
+uint8_t output_image[64];
 
-            gx = -in[(y-1)*w + (x-1)] - 2*in[y*w + (x-1)] - in[(y+1)*w + (x-1)]
-                 + in[(y-1)*w + (x+1)] + 2*in[y*w + (x+1)] + in[(y+1)*w + (x+1)];
-
-            gy = -in[(y-1)*w + (x-1)] - 2*in[(y-1)*w + x] - in[(y-1)*w + (x+1)]
-                 + in[(y+1)*w + (x-1)] + 2*in[(y+1)*w + x] + in[(y+1)*w + (x+1)];
-
-            int mag = (gx * gx + gy * gy) >> 8;
-            if (mag > 255) mag = 255;
-            out[idx] = (uint8_t)mag;
-        }
+void edge_detect(uint32_t src, uint32_t dst, uint16_t width, uint16_t height) {
+    // Set up accelerator
+    edge_ctrl->src_addr = src;
+    edge_ctrl->dst_addr = dst;
+    edge_ctrl->width = width;
+    edge_ctrl->height = height;
+    edge_ctrl->enable = 1;
+    
+    // Start processing
+    edge_ctrl->start = 1;
+    
+    // Wait for completion
+    while (!(edge_ctrl->status & 0x1)) {
+        // Can also use interrupts instead of polling
     }
-}
-
-// Compare images: count mismatches
-int compare_images(uint8_t *a, uint8_t *b, int size) {
-    int diff = 0;
-    for (int i = 0; i < size; ++i) {
-        if (a[i] != b[i]) {
-            diff++;
-        }
-    }
-    return diff;
 }
 
 int main() {
-    // Copy const image_data to mutable input buffer
-    uint8_t input_copy[IMG_SIZE];
-    for (int i = 0; i < IMG_SIZE; i++) {
-        input_copy[i] = image_data[i];
+    // Copy test image to SRAM (address 0x10000000)
+    uint8_t *sram = (uint8_t *)0x10000000;
+    for (int i = 0; i < 64; i++) {
+        sram[i] = test_image[i];
     }
-
-    // Run software Sobel filter
-    uint32_t sw_start = rdcycle();
-    sobel_sw(input_copy, sw_output, WIDTH, HEIGHT);
-    uint32_t sw_end = rdcycle();
-    uint32_t sw_cycles = sw_end - sw_start;
-
-    // Run hardware Sobel accelerator
-    uint32_t hw_start = rdcycle();
-    SOBEL_IN_ADDR  = (uint32_t)input_copy;
-    SOBEL_OUT_ADDR = (uint32_t)hw_output;
-    SOBEL_IMG_SIZE = (WIDTH << 16) | HEIGHT;
-    SOBEL_START    = 1;
-    while (SOBEL_DONE == 0);
-    uint32_t hw_end = rdcycle();
-    uint32_t hw_cycles = hw_end - hw_start;
-
-    // Compare results
-    int diff_pixels = compare_images(sw_output, hw_output, IMG_SIZE);
-
-    // Print stats
-    printf("Software cycles: %u\n", sw_cycles);
-    printf("Hardware cycles: %u\n", hw_cycles);
-    if (hw_cycles > 0) {
-        printf("Speedup: %u.%02u x\n", sw_cycles / hw_cycles,
-            (100 * sw_cycles / hw_cycles) % 100);
-    }
-
-    if (diff_pixels == 0) {
-        printf("Outputs match.\n");
-    } else {
-        printf("Outputs differ in %d pixels.\n", diff_pixels);
-    }
-
+    
+    // Perform edge detection
+    edge_detect(0x10000000, (uint32_t)output_image, 8, 8);
+    
+    // The output_image now contains the edge-detected version
+    
+    // Return success
     return 0;
 }
