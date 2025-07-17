@@ -39,7 +39,7 @@ package user_pkg;
 
   // Address rules given to address decoder
   localparam croc_pkg::addr_map_rule_t [NumDemuxSbrRules-1:0] user_addr_map = '{
-    '{ base_addr: UserEdgeAccelAddrOffset, size: UserEdgeAccelAddrRange }
+    '{ idx: UserEdgeAccel, start_addr: UserEdgeAccelAddrOffset, end_addr: UserEdgeAccelAddrOffset + UserEdgeAccelAddrRange - 1 }
   };
 
 endpackage
