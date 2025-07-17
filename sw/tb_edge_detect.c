@@ -1,10 +1,11 @@
 #include <stdint.h>
 #include <stdio.h>
-#include "image_data.h"  // Include image_data.h to get input_img[]
+#include "image_data.h"
 
-#define WIDTH      64
-#define HEIGHT     64
-#define IMG_SIZE   (WIDTH * HEIGHT)
+// Use the same image size as in image_data.h
+#define WIDTH  IMAGE_WIDTH
+#define HEIGHT IMAGE_HEIGHT
+#define IMG_SIZE IMAGE_SIZE
 
 // MMIO Register Map (adjust base address as per your system)
 #define SOBEL_BASE         0x20000000
@@ -57,11 +58,10 @@ int compare_images(uint8_t *a, uint8_t *b, int size) {
 }
 
 int main() {
-    // input_img[] is already declared and initialized in image_data.h
-    // You can copy it to a mutable buffer if needed
+    // Copy const image_data to mutable input buffer
     uint8_t input_copy[IMG_SIZE];
     for (int i = 0; i < IMG_SIZE; i++) {
-        input_copy[i] = input_img[i];
+        input_copy[i] = image_data[i];
     }
 
     // Run software Sobel filter

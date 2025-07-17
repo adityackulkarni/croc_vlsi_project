@@ -5,9 +5,10 @@
 
 #define IMAGE_WIDTH  8
 #define IMAGE_HEIGHT 8
+#define IMAGE_SIZE   (IMAGE_WIDTH * IMAGE_HEIGHT)
 
 // Example 8x8 grayscale image data (values 0-255)
-const uint8_t image_data[IMAGE_WIDTH * IMAGE_HEIGHT] = {
+const uint8_t image_data[IMAGE_SIZE] = {
     0,  32,  64,  96, 128, 160, 192, 224,
    32,  64,  96, 128, 160, 192, 224, 255,
    64,  96, 128, 160, 192, 224, 255, 224,
