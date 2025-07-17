@@ -55,7 +55,7 @@ package user_pkg;
     '{ // Rule 0: Sobel Accelerator
       start_addr: UserRomAddrOffset,
       end_addr:   UserRomAddrOffset + UserRomAddrRange - 1,
-      idx:        SobelAccel
+      idx:        UserAccel
     }
   };
 
