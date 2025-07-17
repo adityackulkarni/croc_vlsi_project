@@ -17,6 +17,19 @@ package user_pkg;
   
   // None
 
+  localparam int unsigned NumUserDomainManagers = 1;
+
+  localparam bit [31:0] UserMemAddrOffset = 32'h2000_0000;
+  localparam bit [31:0] UserMemAddrRange  = 32'h0000_1000; // 64KB (adjust to match your memory)
+
+  localparam croc_pkg::addr_map_rule_t [0:0] user_mgr_addr_map = '{
+    '{
+      start_addr: UserMemAddrOffset,
+      end_addr:   UserMemAddrOffset + UserMemAddrRange - 1,
+      idx:        0  // assuming only one manager port
+    }
+  };
+
 
   /////////////////////////////////////
   // User Subordinate Address maps ////
@@ -32,9 +45,10 @@ package user_pkg;
 
   // Enum for bus indices
   typedef enum int {
-    SobelAccel = 0,
+    UserAccel = 0,
     UserError = 1
   } user_demux_outputs_e;
+
 
   // Address rules given to address decoder
   localparam croc_pkg::addr_map_rule_t [NumDemuxSbrRules-1:0] user_addr_map = '{
