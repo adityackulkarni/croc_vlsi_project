@@ -33,8 +33,23 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   // No manager so we don't need a obi_mux module and just terminate the request properly
   // Jakub - I think we need to edit this piece of code in order to be able to issue requests as master
   assign user_mgr_obi_req_o = '0;
+  // ----------------------------------------------------------------------------------------------
+  // User Manager Buses
+  // ----------------------------------------------------------------------------------------------
+  // TODO: Do I need the same structure as with User Subordinate buses?
 
+  //-----------------------------------------------------------------------------------------------
+  // Multiplex to Croc Subordinates according to address map
+  //-----------------------------------------------------------------------------------------------
+  // TODO: How to properly multiplex signals? We only need to access SRAM0. How to use obi_mux?
+  // TODO: Do I need some sort of addr_decode as in the subordinate case?
 
+  //-------------------------------------------------------------------------------------------------
+  // Croc Subordinates
+  //-------------------------------------------------------------------------------------------------
+  // TODO: Do I need to instantiate SRAM0? How does it work?
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////
   // User Subordinate DEMUX //
   ////////////////////////////
@@ -109,18 +124,6 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
 // User Subordinates
 //-------------------------------------------------------------------------------------------------
 
-// We commend User ROM out, this is a leftover from the exercise
-//  // User ROM
-//  user_rom #(
-//    .ObiCfg      ( SbrObiCfg     ),
-//    .obi_req_t   ( sbr_obi_req_t ),
-//    .obi_rsp_t   ( sbr_obi_rsp_t )
-//  ) i_user_rom (
-//    .clk_i,
-//    .rst_ni,
-//    .obi_req_i  ( user_rom_obi_req ),
-//    .obi_rsp_o  ( user_rom_obi_rsp )
-//  );
 
   // Error Subordinate
   obi_err_sbr #(

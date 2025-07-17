@@ -15,8 +15,31 @@ package user_pkg;
   // User Manager Address maps //
   ///////////////////////////////
   
-  // None
+  // We need to have this in order to connect to croc domain as managers
+  localparam int unsigned NumCrocDomainSubordinates = 1; // NOTE: should be one because I only want to connect to SRAM0
+  
+  // We need to create address map so that EDM module knows where the SRAM is
+  localparam bit [31:0] CrocSramAddrOffset  =  croc_pkg::SramBaseAddr;  // 32'h1000_0000;
+  localparam bit [31:0] CrocSramAddrRange   =  croc_pkg::SramAddrRange; // TODO: ask if this is correct
+  
+  localparam int unsigned NumDemuxMgrRules  = NumCrocDomainSubordinates; // number of address rules in the decoder
+  localparam int unsigned NumDemuxMgr       = NumDemuxMgrRules + 1; // additional OBI error, used for signal arrays
 
+  // Enum for bus indices
+  typedef enum int {
+    CrocError = 0,
+    CrocSRAM0 = 1
+  } croc_demux_outputs_e;
+
+  // Address rules given to address decoder
+  // CrocError does not appear as it will be used as default rule TODO: ask if this is correct
+  // Here we assume 1 possible connection UserDomain -> CrocDomain
+  localparam croc_pkg::addr_map_rule_t [NumDemuxMgrRules-1:0] croc_addr_map = '{
+    '{ idx:CrocSRAM0, start_addr: CrocSramAddrOffset, end_addr: CrocSramAddrOffset + CrocSramAddrRange}
+  };
+
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////
   // User Subordinate Address maps ////
   /////////////////////////////////////
