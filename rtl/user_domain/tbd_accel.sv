@@ -1,3 +1,5 @@
+// Updated version of tbd_accel.sv WITHOUT using obi_req_t or obi_resp_t
+
 module tbd_accel #( 
     parameter int unsigned DATA_WIDTH = 32,
     parameter int unsigned ADDR_WIDTH = 32
@@ -6,18 +8,27 @@ module tbd_accel #(
     input  logic                     rst_ni,
 
     // OBI Manager Interface (to access memory)
-    output obi_req_t                 obi_mgr_req_o,
-    input  obi_resp_t                obi_mgr_rsp_i,
+    output logic                     obi_mgr_req_o_req,
+    output logic                     obi_mgr_req_o_we,
+    output logic [ADDR_WIDTH-1:0]   obi_mgr_req_o_addr,
+    output logic [DATA_WIDTH-1:0]   obi_mgr_req_o_wdata,
+    output logic [3:0]              obi_mgr_req_o_be,
+    input  logic                    obi_mgr_rsp_i_gnt,
+    input  logic                    obi_mgr_rsp_i_rvalid,
+    input  logic [DATA_WIDTH-1:0]   obi_mgr_rsp_i_rdata,
 
     // OBI Subordinate Interface (for control registers)
-    input  obi_req_t                 obi_sbr_req_i,
-    output obi_resp_t                obi_sbr_rsp_o,
+    input  logic                    obi_sbr_req_i_req,
+    input  logic                    obi_sbr_req_i_we,
+    input  logic [ADDR_WIDTH-1:0]   obi_sbr_req_i_addr,
+    input  logic [DATA_WIDTH-1:0]   obi_sbr_req_i_wdata,
+    output logic                    obi_sbr_rsp_o_gnt,
+    output logic                    obi_sbr_rsp_o_rvalid,
+    output logic [DATA_WIDTH-1:0]   obi_sbr_rsp_o_rdata,
 
     // Interrupt
     output logic                     interrupt_o
 );
-
-    import obi_pkg::*;
 
     // Control registers
     typedef struct packed {
@@ -51,8 +62,12 @@ module tbd_accel #(
     logic [7:0]            pixel_window[0:8];
     logic [7:0]            result_pixel;
 
-    // OBI manager interface
-    obi_req_t obi_req_d, obi_req_q;
+    // OBI manager interface signals
+    logic                  obi_req_d_req,  obi_req_q_req;
+    logic                  obi_req_d_we,   obi_req_q_we;
+    logic [ADDR_WIDTH-1:0] obi_req_d_addr, obi_req_q_addr;
+    logic [DATA_WIDTH-1:0] obi_req_d_wdata, obi_req_q_wdata;
+    logic [3:0]            obi_req_d_be,   obi_req_q_be;
 
     // Absolute value function
     function automatic int abs_val(int val);
@@ -70,28 +85,28 @@ module tbd_accel #(
     // Control register read/write
     always_comb begin
         ctrl_reg_d = ctrl_reg_q;
-        obi_sbr_rsp_o = '0;
-        obi_sbr_rsp_o.gnt = 1'b1;
-        obi_sbr_rsp_o.rvalid = 1'b1;
+        obi_sbr_rsp_o_gnt = 1'b1;
+        obi_sbr_rsp_o_rvalid = 1'b1;
+        obi_sbr_rsp_o_rdata = '0;
 
-        if (obi_sbr_req_i.req) begin
-            if (obi_sbr_req_i.we) begin
-                case (obi_sbr_req_i.addr[5:2])
-                    0: ctrl_reg_d.src_addr = obi_sbr_req_i.wdata;
-                    1: ctrl_reg_d.dst_addr = obi_sbr_req_i.wdata;
-                    2: ctrl_reg_d.width    = obi_sbr_req_i.wdata[15:0];
-                    3: ctrl_reg_d.height   = obi_sbr_req_i.wdata[15:0];
-                    4: ctrl_reg_d.enable   = obi_sbr_req_i.wdata[0];
-                    5: ctrl_reg_d.start    = obi_sbr_req_i.wdata[0];
+        if (obi_sbr_req_i_req) begin
+            if (obi_sbr_req_i_we) begin
+                case (obi_sbr_req_i_addr[5:2])
+                    0: ctrl_reg_d.src_addr = obi_sbr_req_i_wdata;
+                    1: ctrl_reg_d.dst_addr = obi_sbr_req_i_wdata;
+                    2: ctrl_reg_d.width    = obi_sbr_req_i_wdata[15:0];
+                    3: ctrl_reg_d.height   = obi_sbr_req_i_wdata[15:0];
+                    4: ctrl_reg_d.enable   = obi_sbr_req_i_wdata[0];
+                    5: ctrl_reg_d.start    = obi_sbr_req_i_wdata[0];
                 endcase
             end else begin
-                case (obi_sbr_req_i.addr[5:2])
-                    0: obi_sbr_rsp_o.rdata = ctrl_reg_q.src_addr;
-                    1: obi_sbr_rsp_o.rdata = ctrl_reg_q.dst_addr;
-                    2: obi_sbr_rsp_o.rdata = {16'b0, ctrl_reg_q.width};
-                    3: obi_sbr_rsp_o.rdata = {16'b0, ctrl_reg_q.height};
-                    4: obi_sbr_rsp_o.rdata = {31'b0, ctrl_reg_q.enable};
-                    5: obi_sbr_rsp_o.rdata = {31'b0, ctrl_reg_q.done};
+                case (obi_sbr_req_i_addr[5:2])
+                    0: obi_sbr_rsp_o_rdata = ctrl_reg_q.src_addr;
+                    1: obi_sbr_rsp_o_rdata = ctrl_reg_q.dst_addr;
+                    2: obi_sbr_rsp_o_rdata = {16'b0, ctrl_reg_q.width};
+                    3: obi_sbr_rsp_o_rdata = {16'b0, ctrl_reg_q.height};
+                    4: obi_sbr_rsp_o_rdata = {31'b0, ctrl_reg_q.enable};
+                    5: obi_sbr_rsp_o_rdata = {31'b0, ctrl_reg_q.done};
                 endcase
             end
         end
@@ -101,7 +116,13 @@ module tbd_accel #(
     always_comb begin
         state_d = state_q;
         ctrl_reg_d.done = 1'b0;
-        obi_req_d = '0;
+
+        obi_req_d_req = 1'b0;
+        obi_req_d_we  = 1'b0;
+        obi_req_d_addr = '0;
+        obi_req_d_wdata = '0;
+        obi_req_d_be    = 4'b0000;
+
         read_addr_d = read_addr_q;
         write_addr_d = write_addr_q;
         x_cnt_d = x_cnt_q;
@@ -119,12 +140,11 @@ module tbd_accel #(
                 end
             end
             READ: begin
-                obi_req_d.req  = 1'b1;
-                obi_req_d.we   = 1'b0;
-                obi_req_d.addr = read_addr_q;
-                if (obi_mgr_rsp_i.gnt) begin
-                    // Dummy logic to load window - real logic should map actual addresses
-                    for (int i = 0; i < 9; i++) pixel_window[i] = obi_mgr_rsp_i.rdata[7:0];
+                obi_req_d_req  = 1'b1;
+                obi_req_d_we   = 1'b0;
+                obi_req_d_addr = read_addr_q;
+                if (obi_mgr_rsp_i_gnt) begin
+                    for (int i = 0; i < 9; i++) pixel_window[i] = obi_mgr_rsp_i_rdata[7:0];
                     state_d = PROCESS;
                 end
             end
@@ -132,12 +152,12 @@ module tbd_accel #(
                 state_d = WRITE;
             end
             WRITE: begin
-                obi_req_d.req   = 1'b1;
-                obi_req_d.we    = 1'b1;
-                obi_req_d.addr  = write_addr_q;
-                obi_req_d.wdata = {24'b0, result_pixel};
-                obi_req_d.be    = 4'b0001;
-                if (obi_mgr_rsp_i.gnt) begin
+                obi_req_d_req   = 1'b1;
+                obi_req_d_we    = 1'b1;
+                obi_req_d_addr  = write_addr_q;
+                obi_req_d_wdata = {24'b0, result_pixel};
+                obi_req_d_be    = 4'b0001;
+                if (obi_mgr_rsp_i_gnt) begin
                     x_cnt_d = x_cnt_q + 1;
                     read_addr_d = read_addr_q + 1;
                     write_addr_d = write_addr_q + 1;
@@ -171,7 +191,11 @@ module tbd_accel #(
             write_addr_q <= '0;
             x_cnt_q <= '0;
             y_cnt_q <= '0;
-            obi_req_q <= '0;
+            obi_req_q_req <= 1'b0;
+            obi_req_q_we <= 1'b0;
+            obi_req_q_addr <= '0;
+            obi_req_q_wdata <= '0;
+            obi_req_q_be <= 4'b0000;
         end else begin
             ctrl_reg_q <= ctrl_reg_d;
             state_q <= state_d;
@@ -179,10 +203,18 @@ module tbd_accel #(
             write_addr_q <= write_addr_d;
             x_cnt_q <= x_cnt_d;
             y_cnt_q <= y_cnt_d;
-            obi_req_q <= obi_req_d;
+            obi_req_q_req <= obi_req_d_req;
+            obi_req_q_we  <= obi_req_d_we;
+            obi_req_q_addr <= obi_req_d_addr;
+            obi_req_q_wdata <= obi_req_d_wdata;
+            obi_req_q_be <= obi_req_d_be;
         end
     end
 
-    assign obi_mgr_req_o = obi_req_q;
+    assign obi_mgr_req_o_req   = obi_req_q_req;
+    assign obi_mgr_req_o_we    = obi_req_q_we;
+    assign obi_mgr_req_o_addr  = obi_req_q_addr;
+    assign obi_mgr_req_o_wdata = obi_req_q_wdata;
+    assign obi_mgr_req_o_be    = obi_req_q_be;
 
 endmodule
