@@ -1,11 +1,12 @@
 // Copyright 2024 ETH Zurich and University of Bologna.
 // Solderpad Hardware License, Version 0.51, see LICENSE for details.
 // SPDX-License-Identifier: SHL-0.51
+//
+// Authors:
+// - Philippe Sauter <phsauter@iis.ee.ethz.ch>
 
 module user_domain import user_pkg::*; import croc_pkg::*; #(
-  parameter int unsigned GpioCount = 16,
-  parameter int unsigned DataWidth = 32,
-  parameter int unsigned AddrWidth = 32
+  parameter int unsigned GpioCount = 16
 ) (
   input  logic      clk_i,
   input  logic      ref_clk_i,
@@ -22,10 +23,8 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   output logic [NumExternalIrqs-1:0] interrupts_o // interrupts to core
 );
 
-  // Edge Detection Interrupt
-  logic edge_detect_interrupt;
+  assign interrupts_o = '0;  
 
-  assign interrupts_o = {edge_detect_interrupt, {NumExternalIrqs-1{1'b0}}};
 
   //////////////////////
   // User Manager MUX //
@@ -47,18 +46,11 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   sbr_obi_req_t [NumDemuxSbr-1:0] all_user_sbr_obi_req;
   sbr_obi_rsp_t [NumDemuxSbr-1:0] all_user_sbr_obi_rsp;
 
-  // Edge Detection Subordinate Bus
-  sbr_obi_req_t edge_detect_obi_req;
-  sbr_obi_rsp_t edge_detect_obi_rsp;
-
   // Error Subordinate Bus
   sbr_obi_req_t user_error_obi_req;
   sbr_obi_rsp_t user_error_obi_rsp;
 
   // Fanout into more readable signals
-  assign edge_detect_obi_req              = all_user_sbr_obi_req[UserEdgeDetect];
-  assign all_user_sbr_obi_rsp[UserEdgeDetect] = edge_detect_obi_rsp;
-
   assign user_error_obi_req              = all_user_sbr_obi_req[UserError];
   assign all_user_sbr_obi_rsp[UserError] = user_error_obi_rsp;
 
@@ -104,29 +96,9 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   );
 
 
-  //-------------------------------------------------------------------------------------------------
-  // User Subordinates
-  //-------------------------------------------------------------------------------------------------
-
-  // Edge Detection Accelerator
-  tbd_accel #(
-    .DataWidth ( DataWidth ),
-    .AddrWidth ( AddrWidth )
-  ) i_tbd_accel (
-    .clk_i,
-    .rst_ni,
-    
-    // OBI Manager Interface (to access memory)
-    .obi_mgr_req_o ( edge_detect_obi_req ),
-    .obi_mgr_rsp_i ( edge_detect_obi_rsp ),
-    
-    // OBI Subordinate Interface (for control registers)
-    .obi_sbr_req_i ( user_mgr_obi_rsp_i ),
-    .obi_sbr_rsp_o ( user_mgr_obi_req_o ),
-    
-    // Interrupt
-    .interrupt_o   ( edge_detect_interrupt )
-  );
+//-------------------------------------------------------------------------------------------------
+// User Subordinates
+//-------------------------------------------------------------------------------------------------
 
   // Error Subordinate
   obi_err_sbr #(
