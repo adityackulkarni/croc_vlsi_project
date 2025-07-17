@@ -24,7 +24,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
 );
 
   // Declare subordinate index for user_edge_accel
-  localparam int unsigned UserEdgeAccel = 1;
+  localparam int unsigned kUserEdgeAccel = 1;
 
   assign interrupts_o = '0;  
 
@@ -133,17 +133,17 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .rst_ni(rst_ni),
 
     // Slave interface from user_domain subordinate demux
-    .sbr_obi_req_i(all_user_sbr_obi_req[UserEdgeAccel].req),
-    .sbr_obi_addr_i(all_user_sbr_obi_req[UserEdgeAccel].a.addr),
-    .sbr_obi_wdata_i(all_user_sbr_obi_req[UserEdgeAccel].a.wdata),
-    .sbr_obi_we_i(all_user_sbr_obi_req[UserEdgeAccel].a.we),
-    .sbr_obi_id_i(all_user_sbr_obi_req[UserEdgeAccel].a.id),
+    .sbr_obi_req_i(all_user_sbr_obi_req[kUserEdgeAccel].req),
+    .sbr_obi_addr_i(all_user_sbr_obi_req[kUserEdgeAccel].a.addr),
+    .sbr_obi_wdata_i(all_user_sbr_obi_req[kUserEdgeAccel].a.wdata),
+    .sbr_obi_we_i(all_user_sbr_obi_req[kUserEdgeAccel].a.we),
+    .sbr_obi_id_i(all_user_sbr_obi_req[kUserEdgeAccel].a.id),
 
-    .sbr_obi_gnt_o(all_user_sbr_obi_req[UserEdgeAccel].gnt),
-    .sbr_obi_rvalid_o(all_user_sbr_obi_rsp[UserEdgeAccel].rvalid),
-    .sbr_obi_rdata_o(all_user_sbr_obi_rsp[UserEdgeAccel].rdata),
-    .sbr_obi_rid_o(all_user_sbr_obi_rsp[UserEdgeAccel].rid),
-    .sbr_obi_err_o(all_user_sbr_obi_rsp[UserEdgeAccel].err),
+    .sbr_obi_gnt_o(all_user_sbr_obi_req[kUserEdgeAccel].gnt),
+    .sbr_obi_rvalid_o(all_user_sbr_obi_rsp[kUserEdgeAccel].rvalid),
+    .sbr_obi_rdata_o(all_user_sbr_obi_rsp[kUserEdgeAccel].rdata),
+    .sbr_obi_rid_o(all_user_sbr_obi_rsp[kUserEdgeAccel].rid),
+    .sbr_obi_err_o(all_user_sbr_obi_rsp[kUserEdgeAccel].err),
 
     // Master interface to SRAM
     .mgr_obi_req_o(user_mgr_obi_req_o),    // Forwarding master requests directly to SRAM master interface of user_domain
