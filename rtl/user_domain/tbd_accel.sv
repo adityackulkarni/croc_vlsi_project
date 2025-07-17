@@ -2,7 +2,7 @@
 // Solderpad Hardware License, Version 0.51, see LICENSE for details.
 // SPDX-License-Identifier: SHL-0.51
 
-module edge_detection import croc_pkg::*; #(
+module tbd_accel import croc_pkg::*; #(
   parameter int unsigned DataWidth = 32,
   parameter int unsigned AddrWidth = 32
 ) (
@@ -20,6 +20,7 @@ module edge_detection import croc_pkg::*; #(
   // Interrupt
   output logic                     interrupt_o
 );
+
 
   // Control registers
   typedef struct packed {
@@ -70,7 +71,7 @@ module edge_detection import croc_pkg::*; #(
          (window[0][0] + 2*window[0][1] + window[0][2]);
          
     // Gradient magnitude (approximation)
-    temp = (abs(gx) + abs(gy)) >> 1;
+    temp = (((gx < 0) ? -gx : gx) + ((gy < 0) ? -gy : gy)) >> 1;
     result_pixel = (temp > 8'h80) ? 8'hFF : 8'h00; // Threshold
   end
   

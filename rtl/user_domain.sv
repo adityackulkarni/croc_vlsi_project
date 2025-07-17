@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: SHL-0.51
 
 module user_domain import user_pkg::*; import croc_pkg::*; #(
-  parameter int unsigned GpioCount = 16
+  parameter int unsigned GpioCount = 16,
+  parameter int unsigned DataWidth = 32,
+  parameter int unsigned AddrWidth = 32
 ) (
   input  logic      clk_i,
   input  logic      ref_clk_i,
@@ -107,10 +109,10 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   //-------------------------------------------------------------------------------------------------
 
   // Edge Detection Accelerator
-  edge_detection #(
+  tbd_accel #(
     .DataWidth ( DataWidth ),
     .AddrWidth ( AddrWidth )
-  ) i_edge_detection (
+  ) i_tbd_accel (
     .clk_i,
     .rst_ni,
     
