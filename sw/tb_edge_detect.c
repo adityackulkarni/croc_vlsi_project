@@ -1,108 +1,101 @@
-// Steps
-
-// 1. It runs the Sobel filter on the same 3x3 image patch:
-
-// 2. Once in software for reference
-
-// 3. Once on hardware accelerator for speed and correctness
-
-// 4. It times both implementations using cycle counters.
-
-// 5. It copies image data to SRAM for accelerator access.
-
-// 6. It uses MMIO registers to communicate with the accelerator.
-
-// 7. It prints results and compares software and hardware outputs.
-
-// 8. It checks if the results match and prints a message accordingly.
-
-
-// tb_edge_detect.c
-
-// Testbench for edge detection using Sobel filter
-// This code runs a Sobel filter on a 3x3 image patch in both software and hardware
-
 #include <stdint.h>
-#include "lib/inc/uart.h"
-#include "lib/inc/print.h"
-#include "lib/inc/timer.h"
-#include "image_data.h"
+#include <stdio.h>
 
-#define SRAM_ADDR   ((volatile uint8_t *) 0x10000000)
+#define WIDTH      64
+#define HEIGHT     64
+#define IMG_SIZE   (WIDTH * HEIGHT)
 
-// Accelerator MMIO addresses
-#define ACCEL_BASE    0x20000000
-#define ACCEL_START   (*(volatile uint32_t *)(ACCEL_BASE + 0x00))
-#define ACCEL_DONE    (*(volatile uint32_t *)(ACCEL_BASE + 0x04))
-#define ACCEL_MATCH   (*(volatile uint32_t *)(ACCEL_BASE + 0x08))
+// MMIO Register Map
+#define SOBEL_BASE         0x20000000
+#define SOBEL_IN_ADDR      (*(volatile uint32_t *)(SOBEL_BASE + 0x00))
+#define SOBEL_OUT_ADDR     (*(volatile uint32_t *)(SOBEL_BASE + 0x04))
+#define SOBEL_IMG_SIZE     (*(volatile uint32_t *)(SOBEL_BASE + 0x08))
+#define SOBEL_START        (*(volatile uint32_t *)(SOBEL_BASE + 0x0C))
+#define SOBEL_DONE         (*(volatile uint32_t *)(SOBEL_BASE + 0x10))
 
-// 3x3 Sobel kernel (horizontal)
-const int8_t filter[9] = {
-    -1, 0, 1,
-    -2, 0, 2,
-    -1, 0, 1
-};
+// Buffers in main memory
+uint8_t input_img[IMG_SIZE];
+uint8_t sw_output[IMG_SIZE];
+uint8_t hw_output[IMG_SIZE];
 
-int software_sobel(const uint8_t* image) {
-    int sum = 0;
-    for (int i = 0; i < 9; i++) {
-        sum += filter[i] * image[i];
-    }
-    return sum;
+// Read 32-bit cycle counter
+static inline uint32_t rdcycle() {
+    uint32_t value;
+    asm volatile ("rdcycle %0" : "=r"(value));
+    return value;
 }
 
-static inline uint32_t get_mcycle(void) {
-    uint32_t cycle;
-    __asm__ volatile ("csrr %0, mcycle" : "=r" (cycle));
-    return cycle;
+// Simple software Sobel filter (no borders)
+void sobel_sw(uint8_t *in, uint8_t *out, int w, int h) {
+    int gx, gy;
+    for (int y = 1; y < h - 1; ++y) {
+        for (int x = 1; x < w - 1; ++x) {
+            int idx = y * w + x;
+
+            gx = -in[(y-1)*w + (x-1)] - 2*in[y*w + (x-1)] - in[(y+1)*w + (x-1)]
+                 + in[(y-1)*w + (x+1)] + 2*in[y*w + (x+1)] + in[(y+1)*w + (x+1)];
+
+            gy = -in[(y-1)*w + (x-1)] - 2*in[(y-1)*w + x] - in[(y-1)*w + (x+1)]
+                 + in[(y+1)*w + (x-1)] + 2*in[(y+1)*w + x] + in[(y+1)*w + (x+1)];
+
+            int mag = (gx * gx + gy * gy) >> 8;
+            if (mag > 255) mag = 255;
+            out[idx] = (uint8_t)mag;
+        }
+    }
+}
+
+// Compare images: count mismatches
+int compare_images(uint8_t *a, uint8_t *b, int size) {
+    int diff = 0;
+    for (int i = 0; i < size; ++i) {
+        if (a[i] != b[i]) {
+            diff++;
+        }
+    }
+    return diff;
 }
 
 int main() {
-    uart_init();
-    uart_write_flush();
-    printf("===== Croc Edge Detection Test =====\n");
-
-    // Copy image data into SRAM (accelerator will read from here)
-    for (int i = 0; i < 9; i++) {
-        SRAM_ADDR[i] = image_data[i];
+    // Initialize input with a known pattern
+    for (int i = 0; i < IMG_SIZE; ++i) {
+        input_img[i] = (uint8_t)(i % 256);
     }
 
-    // --- Software version ---
-    printf("\n[Software] Starting Sobel filter...\n");
-    uint32_t sw_start = get_mcycle();
-    int result = software_sobel(image_data);
-    int sw_match = (result > 100) ? 1 : 0;
-    // int sw_match = result > 100;
-    uint32_t sw_end = get_mcycle();
-    printf("[Software] Result: %d (match: %d)\n", result, sw_match);
-    printf("[Software] Cycles: %u\n", (unsigned int)(sw_end - sw_start));
-    // printf("[Software] Cycles: %lu\n", sw_end - sw_start);
+    // Run software Sobel
+    uint32_t sw_start = rdcycle();
+    sobel_sw(input_img, sw_output, WIDTH, HEIGHT);
+    uint32_t sw_end = rdcycle();
+    uint32_t sw_cycles = sw_end - sw_start;
 
-    // --- Accelerator version ---
-    printf("\n[Accelerator] Starting hardware accelerator...\n");
-    uint32_t hw_start = get_mcycle();
+    // Run hardware Sobel
+    uint32_t hw_start = rdcycle();
+    SOBEL_IN_ADDR  = (uint32_t)input_img;
+    SOBEL_OUT_ADDR = (uint32_t)hw_output;
+    SOBEL_IMG_SIZE = (WIDTH << 16) | HEIGHT;
+    SOBEL_START    = 1;
+    while (SOBEL_DONE == 0);
+    uint32_t hw_end = rdcycle();
+    uint32_t hw_cycles = hw_end - hw_start;
 
-    ACCEL_START = 1;  // Trigger accelerator
+    // Compare outputs
+    int diff_pixels = compare_images(sw_output, hw_output, IMG_SIZE);
 
-    ACCEL_START = 0;  // Clear start to avoid repeated triggering
+    // Print results
+    printf("Software cycles: %u\n", sw_cycles);
+    printf("Hardware cycles: %u\n", hw_cycles);
 
-    // Wait until accelerator sets 'done'
-    while (ACCEL_DONE == 0);
+    if (hw_cycles > 0) {
+        uint32_t speedup_int = sw_cycles / hw_cycles;
+        uint32_t speedup_frac = (100 * sw_cycles / hw_cycles) % 100;
+        printf("Speedup: %u.%02u x\n", speedup_int, speedup_frac);
+    }
 
-    uint32_t hw_end = get_mcycle();
-    int hw_match = ACCEL_MATCH;
-
-    printf("[Accelerator] Match: %d\n", hw_match);
-    printf("[Accelerator] Cycles: %u\n", (unsigned int)(hw_end - hw_start));
-    // printf("[Accelerator] Cycles: %lu\n", hw_end - hw_start);
-
-    // --- Comparison ---
-    if (sw_match == hw_match) {
-        printf("\n Match: Software and Accelerator results agree\n");
+    if (diff_pixels == 0) {
+        printf("Outputs match.\n");
     } else {
-        printf("\n Mismatch: Software and Accelerator results differ\n");
+        printf("Outputs differ in %d pixels.\n", diff_pixels);
     }
-    
-    printf("Test Done\n");
+
     return 0;
 }
