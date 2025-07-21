@@ -128,6 +128,12 @@ module user_edge_detect #(
           else
             rsp_data = {16'h0000, edge_sum_q};
         end
+        2'd2: begin  // addr 0x8
+          if (we_q)
+            rsp_err = 1'b1;
+          else
+            rsp_data = {31'b0, (state_q == DONE)};
+        end
         default: begin
           rsp_err = 1'b1;
         end
