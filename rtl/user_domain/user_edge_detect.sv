@@ -1,153 +1,146 @@
-module user_edge_accel #(
-  parameter ADDR_WIDTH = 16,
-  parameter DATA_WIDTH = 32,
-  parameter ID_WIDTH   = 4
+`include "common_cells/registers.svh"
+
+module user_edge_detect #(
+  parameter obi_pkg::obi_cfg_t ObiCfg = obi_pkg::ObiDefaultConfig,
+  parameter type obi_req_t = logic,
+  parameter type obi_rsp_t = logic
 )(
-  input  wire                  clk_i,
-  input  wire                  rst_ni,
+  input  logic clk_i,
+  input  logic rst_ni,
 
-  // OBI Slave Interface (from Croc core)
-  input  wire                  sbr_obi_req_i,
-  input  wire [ADDR_WIDTH-1:0] sbr_obi_addr_i,
-  input  wire [DATA_WIDTH-1:0] sbr_obi_wdata_i,
-  input  wire                  sbr_obi_we_i,
-  input  wire [ID_WIDTH-1:0]   sbr_obi_id_i,
+  // OBI Slave Interface
+  input  obi_req_t obi_req_i,
+  output obi_rsp_t obi_rsp_o,
 
-  output reg                   sbr_obi_gnt_o,
-  output reg                   sbr_obi_rvalid_o,
-  output reg [DATA_WIDTH-1:0]  sbr_obi_rdata_o,
-  output reg [ID_WIDTH-1:0]    sbr_obi_rid_o,
-  output reg                   sbr_obi_err_o,
-
-  // OBI Master Interface (to SRAM)
-  output reg                   mgr_obi_req_o,
-  output reg [ADDR_WIDTH-1:0]  mgr_obi_addr_o,
-  output reg [DATA_WIDTH-1:0]  mgr_obi_wdata_o,
-  output reg                   mgr_obi_we_o,
-  output reg [ID_WIDTH-1:0]    mgr_obi_id_o,
-
-  input  wire                  mgr_obi_gnt_i,
-  input  wire                  mgr_obi_rvalid_i,
-  input  wire [DATA_WIDTH-1:0] mgr_obi_rdata_i,
-  input  wire [ID_WIDTH-1:0]   mgr_obi_rid_i,
-  input  wire                  mgr_obi_err_i
+  // ROM Access Interface
+  output logic        rom_req_o,
+  output logic [31:0] rom_addr_o,
+  input  logic [7:0]  rom_data_i,
+  input  logic        rom_valid_i
 );
 
   typedef enum logic [1:0] {
     IDLE,
-    READ_SRAM,
-    PROCESS,
-    WRITE_BACK
-  } state_t;
+    FETCH,
+    COMPUTE,
+    DONE
+  } state_e;
 
-  state_t state, next_state;
+  state_e state_q, state_d;
 
-  // Internal registers
-  reg [ADDR_WIDTH-1:0] addr_reg;
-  reg [DATA_WIDTH-1:0] buffer_reg;
-  reg [ID_WIDTH-1:0]   id_reg;
+  logic req_d, req_q;
+  logic we_d, we_q;
+  logic [ObiCfg.AddrWidth-1:0] addr_d, addr_q;
+  logic [ObiCfg.IdWidth-1:0] id_d, id_q;
+  logic [ObiCfg.DataWidth-1:0] wdata_d, wdata_q;
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-  if (!rst_ni) begin
-    state <= IDLE;
-    sbr_obi_gnt_o <= 1'b0;
-    sbr_obi_rvalid_o <= 1'b0;
-    sbr_obi_err_o <= 1'b0;
+  logic [7:0] pixel_buf[0:8];  // 3x3 window
+  logic [3:0] fetch_idx_q, fetch_idx_d;
 
-    addr_reg <= '0;
-    buffer_reg <= '0;
-    id_reg <= '0;
-  end else begin
-    state <= next_state;
+  logic signed [10:0] gx, gy;
+  logic [10:0] abs_gx, abs_gy;
+  logic [15:0] edge_sum_d, edge_sum_q;
 
-    // Default outputs
-    sbr_obi_gnt_o <= 1'b0;
-    sbr_obi_rvalid_o <= 1'b0;
-    sbr_obi_err_o <= 1'b0;
+  // Response signals
+  logic [31:0] rsp_data;
+  logic rsp_err;
 
-    case (state)
-      IDLE: begin
-        if (sbr_obi_req_i) begin
-          sbr_obi_gnt_o <= 1'b1;   // Grant the request
-          addr_reg <= sbr_obi_addr_i;
-          id_reg <= sbr_obi_id_i;
-        end
+  // Registering inputs
+  `FF(req_q, req_d, '0)
+  `FF(we_q, we_d, '0)
+  `FF(addr_q, addr_d, '0)
+  `FF(id_q, id_d, '0)
+  `FF(wdata_q, wdata_d, '0)
+  `FF(fetch_idx_q, fetch_idx_d, 4'd0)
+  `FF(edge_sum_q, edge_sum_d, 16'd0)
+  `FF(state_q, state_d, IDLE)
+
+  assign req_d   = obi_req_i.req;
+  assign we_d    = obi_req_i.a.we;
+  assign addr_d  = obi_req_i.a.addr;
+  assign id_d    = obi_req_i.a.aid;
+  assign wdata_d = obi_req_i.a.wdata;
+
+  // ROM access
+  assign rom_req_o  = (state_q == FETCH);
+  assign rom_addr_o = fetch_idx_q;
+
+  // FSM
+  always_comb begin
+    state_d = state_q;
+    fetch_idx_d = fetch_idx_q;
+    edge_sum_d = edge_sum_q;
+
+    if (state_q == IDLE && req_q && we_q && addr_q[3:2] == 2'd0) begin
+      // Start trigger on write to addr 0x0
+      state_d = FETCH;
+      fetch_idx_d = 0;
+    end
+
+    if (state_q == FETCH && rom_valid_i) begin
+      pixel_buf[fetch_idx_q] = rom_data_i;
+      if (fetch_idx_q == 8) begin
+        state_d = COMPUTE;
+      end else begin
+        fetch_idx_d = fetch_idx_q + 1;
       end
-      READ_SRAM: begin
-        // No gnt or rvalid here
-      end
-      PROCESS: begin
-        // No gnt or rvalid here
-      end
-      WRITE_BACK: begin
-        if (mgr_obi_gnt_i) begin
-          sbr_obi_rvalid_o <= 1'b1;  // Data ready to CPU
-        end
-      end
-    endcase
+    end
+
+    if (state_q == COMPUTE) begin
+      // Sobel Gx
+      gx = -pixel_buf[0] + pixel_buf[2]
+         - (pixel_buf[3] << 1) + (pixel_buf[5] << 1)
+         - pixel_buf[6] + pixel_buf[8];
+
+      // Sobel Gy
+      gy = -pixel_buf[0] - (pixel_buf[1] << 1) - pixel_buf[2]
+         + pixel_buf[6] + (pixel_buf[7] << 1) + pixel_buf[8];
+
+      abs_gx = (gx < 0) ? -gx : gx;
+      abs_gy = (gy < 0) ? -gy : gy;
+
+      edge_sum_d = abs_gx + abs_gy;
+      state_d = DONE;
+    end
+
+    if (state_q == DONE && req_q && !we_q && addr_q[3:2] == 2'd1) begin
+      // Read edge result
+      state_d = IDLE;
+    end
   end
-end
 
-// Combinational block for next_state and master requests only
+  // Response generation
+  always_comb begin
+    rsp_data = 32'h0;
+    rsp_err  = 1'b0;
 
-always_comb begin
-  next_state = state;
-
-  mgr_obi_req_o = 1'b0;
-  mgr_obi_addr_o = addr_reg;
-  mgr_obi_wdata_o = buffer_reg;
-  mgr_obi_we_o = 1'b0;
-  mgr_obi_id_o = id_reg;
-
-  sbr_obi_rdata_o = buffer_reg;
-  sbr_obi_rid_o = id_reg;
-
-  case (state)
-    IDLE: begin
-      if (sbr_obi_req_i) begin
-        if (sbr_obi_we_i) begin
-          // Write directly to SRAM
-          mgr_obi_req_o = 1'b1;
-          mgr_obi_we_o = 1'b1;
-          mgr_obi_addr_o = sbr_obi_addr_i;
-          mgr_obi_wdata_o = sbr_obi_wdata_i;
-          mgr_obi_id_o = sbr_obi_id_i;
-
-          if (mgr_obi_gnt_i) begin
-            next_state = IDLE;
-          end else begin
-            next_state = WRITE_BACK;
-          end
-        end else begin
-          // Read request, start read cycle
-          mgr_obi_req_o = 1'b1;
-          mgr_obi_we_o = 1'b0;
-          mgr_obi_addr_o = sbr_obi_addr_i;
-          mgr_obi_id_o = sbr_obi_id_i;
-          next_state = READ_SRAM;
+    if (req_q) begin
+      unique case (addr_q[3:2])
+        2'd0: begin
+          // Trigger write (start computation)
+          if (!we_q)
+            rsp_err = 1'b1;
         end
-      end
+        2'd1: begin
+          // Edge result read
+          if (we_q)
+            rsp_err = 1'b1;
+          else
+            rsp_data = {16'h0000, edge_sum_q};
+        end
+        default: begin
+          rsp_err = 1'b1;
+        end
+      endcase
     end
-    READ_SRAM: begin
-      if (mgr_obi_rvalid_i && mgr_obi_rid_i == id_reg) begin
-        buffer_reg = mgr_obi_rdata_i;
-        next_state = PROCESS;
-      end
-    end
-    PROCESS: begin
-      buffer_reg = buffer_reg >> 1;
-      next_state = WRITE_BACK;
-    end
-    WRITE_BACK: begin
-      mgr_obi_req_o = 1'b1;
-      mgr_obi_we_o = 1'b1;
-      mgr_obi_addr_o = addr_reg;
-      mgr_obi_wdata_o = buffer_reg;
-      mgr_obi_id_o = id_reg;
+  end
 
-      if (mgr_obi_gnt_i) begin
-        next_state = IDLE;
-      end
-    end
-  endcase
-end
+  // OBI response
+  assign obi_rsp_o.gnt          = obi_req_i.req;
+  assign obi_rsp_o.rvalid       = req_q;
+  assign obi_rsp_o.r.rdata      = rsp_data;
+  assign obi_rsp_o.r.rid        = id_q;
+  assign obi_rsp_o.r.err        = rsp_err;
+  assign obi_rsp_o.r.r_optional = '0;
+
+endmodule
