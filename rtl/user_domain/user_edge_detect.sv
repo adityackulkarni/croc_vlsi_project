@@ -142,5 +142,6 @@ module user_edge_detect #(
   assign obi_rsp_o.r.rid        = id_q;
   assign obi_rsp_o.r.err        = rsp_err;
   assign obi_rsp_o.r.r_optional = '0;
+  
 
 endmodule
