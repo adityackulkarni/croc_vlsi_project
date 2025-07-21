@@ -67,13 +67,13 @@ int main() {
     printf("Calculating software results...\n");
     for (int i = 0; i < 8; i++) {
         software_results[i] = sobel_edge_3x3(test_windows[i]);
-        printf("SW Test %d: Result = %u\n", i, software_results[i]);
+        printf("SW Test %x: Result = %x\n", i, software_results[i]);
     }
 
     printf("Sending to hardware accelerator...\n");
     for (int i = 0; i < 8; i++) {
         uint8_t center_pixel = test_windows[i][1][1];
-        printf("HW Test %d: Writing center pixel = %u\n", i, center_pixel);
+        printf("HW Test %x: Writing center pixel = %x\n", i, center_pixel);
         *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_INPUT_OFFSET) = (uint32_t)center_pixel;
 
         printf("HW Test %d: Starting computation...\n", i);
@@ -83,18 +83,18 @@ int main() {
         while (*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_STATUS_OFFSET) == 0 && timeout-- > 0);
 
         if (timeout <= 0) {
-            printf("HW Test %d: ERROR: Timeout waiting for accelerator\n", i);
+            printf("HW Test %x: ERROR: Timeout waiting for accelerator\n", i);
             hardware_results[i] = 0xFF; // mark as failed
             continue;
         }
 
         hardware_results[i] = (uint8_t)*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_RESULT_OFFSET);
-        printf("HW Test %d: Result = %u\n", i, hardware_results[i]);
+        printf("HW Test %x: Result = %x\n", i, hardware_results[i]);
     }
 
     printf("Comparing results...\n");
     for (int i = 0; i < 8; i++) {
-        printf("Test %d: SW = %3u, HW = %3u, Center = %3u\n",
+        printf("Test %x: SW = %x, HW = %x, Center = %x\n",
                i, software_results[i], hardware_results[i], test_windows[i][1][1]);
     }
 
