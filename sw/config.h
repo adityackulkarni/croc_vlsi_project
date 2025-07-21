@@ -13,8 +13,11 @@
 #define GPIO_BASE_ADDR    0x03005000
 #define TIMER_BASE_ADDR   0x0300A000
 
+// Edge detection
+#define USER_EDGE_DETECT_BASE_ADDR 0x20000000
+
 // Frequencies
-#define TB_FREQUENCY 20000000
+#define TB_FREQUENCY 10000000
 #define TB_BAUDRATE    115200
 
 // Peripheral configs

@@ -7,7 +7,9 @@
 
 #include "uart.h"
 #include "print.h"
+#include "gpio.h"
 #include "util.h"
+// #include "math.h"
 
 #define TB_FREQUENCY     10000000
 #define TB_BAUDRATE      115200
@@ -53,7 +55,8 @@ uint8_t sobel_edge_3x3(uint8_t window[3][3]) {
     }
     int mag = (gx*gx + gy*gy); // squared magnitude
     // Approximate sqrt with shift (simple)
-    mag = (int)(sqrt((float)mag));
+    // mag = (int)(sqrt((float)mag));
+    mag = (int)(mag>>1);
     return clamp_int_to_uint8(mag);
 }
 
