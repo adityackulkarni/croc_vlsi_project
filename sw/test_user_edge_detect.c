@@ -12,7 +12,7 @@
 #define EDGE_DETECT_RESULT_OFFSET  0x4
 #define EDGE_DETECT_STATUS_OFFSET  0x8
 
-#define USER_ROM_BASE_ADDR         0x20001000  // Base address for ROM
+#define USER_ROM_BASE_ADDR         0x20001000  
 
 const int8_t Gx[3][3] = {
     {-1, 0, 1},

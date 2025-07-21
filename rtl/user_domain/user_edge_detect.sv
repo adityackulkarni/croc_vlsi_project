@@ -41,8 +41,6 @@ module user_edge_detect #(
   logic [10:0] abs_gx, abs_gy;
   logic [15:0] edge_sum_d, edge_sum_q;
 
-  logic [31:0] rom_base_addr_q, rom_base_addr_d;
-
   // Response signals
   logic [31:0] rsp_data;
   logic rsp_err;
@@ -56,7 +54,6 @@ module user_edge_detect #(
   `FF(fetch_idx_q, fetch_idx_d, 4'd0)
   `FF(edge_sum_q, edge_sum_d, 16'd0)
   `FF(state_q, state_d, IDLE)
-  `FF(rom_base_addr_q, rom_base_addr_d, 32'd0)
 
   assign req_d   = obi_req_i.req;
   assign we_d    = obi_req_i.a.we;
@@ -66,20 +63,18 @@ module user_edge_detect #(
 
   // ROM access
   assign rom_req_o  = (state_q == FETCH);
-  assign rom_addr_o = rom_base_addr_q + fetch_idx_q;
+  assign rom_addr_o = fetch_idx_q;
 
   // FSM
   always_comb begin
     state_d = state_q;
     fetch_idx_d = fetch_idx_q;
     edge_sum_d = edge_sum_q;
-    rom_base_addr_d = rom_base_addr_q;
 
     if (state_q == IDLE && req_q && we_q && addr_q[3:2] == 2'd0) begin
-      // Software writes base address to trigger computation
-      rom_base_addr_d = wdata_q;
-      fetch_idx_d = 0;
+      // Start trigger on write to addr 0x0
       state_d = FETCH;
+      fetch_idx_d = 0;
     end
 
     if (state_q == FETCH && rom_valid_i) begin
@@ -122,16 +117,18 @@ module user_edge_detect #(
     if (req_q) begin
       unique case (addr_q[3:2])
         2'd0: begin
+          // Trigger write (start computation)
           if (!we_q)
-            rsp_err = 1'b1; // Invalid read
+            rsp_err = 1'b1;
         end
         2'd1: begin
+          // Edge result read
           if (we_q)
             rsp_err = 1'b1;
           else
             rsp_data = {16'h0000, edge_sum_q};
         end
-        2'd2: begin
+        2'd2: begin  // addr 0x8
           if (we_q)
             rsp_err = 1'b1;
           else
@@ -151,5 +148,6 @@ module user_edge_detect #(
   assign obi_rsp_o.r.rid        = id_q;
   assign obi_rsp_o.r.err        = rsp_err;
   assign obi_rsp_o.r.r_optional = '0;
+  
 
 endmodule
