@@ -2,16 +2,17 @@
 #include "print.h"
 #include "gpio.h"
 #include "util.h"
+#include <string.h>  // for memcpy
 
 #define TB_FREQUENCY     20000000
 #define TB_BAUDRATE      115200
 
 #define USER_EDGE_DETECT_BASE_ADDR 0x20000000
-
-#define EDGE_DETECT_INPUT_OFFSET   0x0
-#define EDGE_DETECT_START_OFFSET   0x4
+#define EDGE_DETECT_START_OFFSET   0x0
+#define EDGE_DETECT_RESULT_OFFSET  0x4
 #define EDGE_DETECT_STATUS_OFFSET  0x8
-#define EDGE_DETECT_RESULT_OFFSET  0xC
+
+#define USER_ROM_BASE_ADDR         0x20001000  // Base address for ROM
 
 const int8_t Gx[3][3] = {
     {-1, 0, 1},
@@ -39,16 +40,14 @@ uint8_t sobel_edge_3x3(uint8_t window[3][3]) {
             gy += window[r][c] * Gy[r][c];
         }
     }
-    int mag = (gx*gx + gy*gy);
-    mag = (int)(mag >> 1);
+    int mag = (gx*gx + gy*gy) >> 1;
     return clamp_int_to_uint8(mag);
 }
 
 int main() {
     uart_init();
 
-    printf("=== Starting Edge Detection Test ===\n");
-    uart_write_flush();
+    printf("=== Starting Edge Detection Test (ROM-driven HW) ===\n");
 
     uint8_t test_windows[8][3][3] = {
         {{ 10,  10,  10}, { 10,  10,  10}, { 10,  10,  10}},
@@ -70,36 +69,37 @@ int main() {
         printf("SW Test %d: Result = %u\n", i, software_results[i]);
     }
 
-    printf("Sending to hardware accelerator...\n");
+    printf("Writing test windows to ROM...\n");
     for (int i = 0; i < 8; i++) {
-        uint8_t center_pixel = test_windows[i][1][1];
-        printf("HW Test %d: Writing center pixel = %u\n", i, center_pixel);
-        *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_INPUT_OFFSET) = (uint32_t)center_pixel;
+        volatile uint8_t* rom_ptr = (volatile uint8_t*)(USER_ROM_BASE_ADDR);
+        for (int r = 0; r < 3; r++) {
+            for (int c = 0; c < 3; c++) {
+                rom_ptr[r * 3 + c] = test_windows[i][r][c];
+            }
+        }
 
-        printf("HW Test %d: Starting computation...\n", i);
+        printf("HW Test %d: Triggering hardware computation...\n", i);
         *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_START_OFFSET) = 1;
 
         int timeout = 100000;
-        while (*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_STATUS_OFFSET) == 0 && timeout-- > 0);
+        while (*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_STATUS_OFFSET) == 0 && --timeout > 0);
 
         if (timeout <= 0) {
-            printf("HW Test %d: ERROR: Timeout waiting for accelerator\n", i);
-            hardware_results[i] = 0xFF; // mark as failed
+            printf("HW Test %d: ERROR: Timeout\n", i);
+            hardware_results[i] = 0xFF;
             continue;
         }
 
-        hardware_results[i] = (uint8_t)*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_RESULT_OFFSET);
+        hardware_results[i] = *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_RESULT_OFFSET);
         printf("HW Test %d: Result = %u\n", i, hardware_results[i]);
     }
 
-    printf("Comparing results...\n");
+    printf("Comparing software and hardware results...\n");
     for (int i = 0; i < 8; i++) {
         printf("Test %d: SW = %3u, HW = %3u, Center = %3u\n",
                i, software_results[i], hardware_results[i], test_windows[i][1][1]);
     }
 
-    uart_write_flush();
-
-    printf("=== Done ===\n");
+    printf("=== Test Complete ===\n");
     return 0;
 }
