@@ -14,7 +14,7 @@ package user_pkg;
   ////////////////////////////////
   // User Manager Address maps //
   ///////////////////////////////
-  
+  // this address map is not needed
   // We need to have this in order to connect to croc domain as managers
   localparam int unsigned NumCrocDomainSubordinates = 1; // NOTE: should be one because I only want to connect to SRAM0
   

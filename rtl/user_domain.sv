@@ -32,7 +32,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
 
   // No manager so we don't need a obi_mux module and just terminate the request properly
   // Jakub - I think we need to edit this piece of code in order to be able to issue requests as master
-  assign user_mgr_obi_req_o = '0;
+  assign user_mgr_obi_req_o = '0; // this needs to be attached as an output of the module
   // ----------------------------------------------------------------------------------------------
   // User Manager Buses
   // ----------------------------------------------------------------------------------------------

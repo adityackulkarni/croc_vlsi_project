@@ -18,8 +18,8 @@ module controller (
   // Outputs to edge detection core
   output logic        valid_pixels,
   output logic signed [7:0] p00, p01, p02,
-                             p10,      p12,
-                             p20, p21, p22,
+                            p10,      p12,
+                            p20, p21, p22,
 
   input  logic [15:0] result
 );
