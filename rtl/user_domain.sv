@@ -116,15 +116,20 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
 
   // User Edge Detection Accelerator (user_edge_detect)
   user_edge_detect #(
-    .ADDR_WIDTH(16),
-    .DATA_WIDTH(32),
-    .ID_WIDTH(4)
-  ) i_user_edge_detect (
-    .clk_i     ( clk_i                 ),
-    .rst_ni    ( rst_ni                ),
-    .obi_req_i ( user_edge_detect_obi_req ),
-    .obi_rsp_o ( user_edge_detect_obi_rsp )
-  );
+  .ObiCfg(SbrObiCfg),           // your obi config struct/parameter
+  .obi_req_t(sbr_obi_req_t),    // your OBI request type
+  .obi_rsp_t(sbr_obi_rsp_t)     // your OBI response type
+) i_user_edge_detect (
+  .clk_i     ( clk_i                 ),
+  .rst_ni    ( rst_ni                ),
+  .obi_req_i ( user_edge_detect_obi_req ),
+  .obi_rsp_o ( user_edge_detect_obi_rsp ),
+  .rom_req_o ( user_edge_detect_rom_req ),    // you must connect these ROM signals too
+  .rom_addr_o( user_edge_detect_rom_addr ),
+  .rom_data_i( user_edge_detect_rom_data ),
+  .rom_valid_i( user_edge_detect_rom_valid )
+);
+
 
   // User ROM
   user_rom #(
