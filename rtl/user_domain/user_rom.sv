@@ -20,13 +20,13 @@ module user_rom #(
   /// OBI request interface
   input  obi_req_t obi_req_i,
   /// OBI response interface
-  output obi_rsp_t obi_rsp_o
+  output obi_rsp_t obi_rsp_o,
 
 // Accelerator Interface
   input  logic        accel_req_i,
   input  logic [31:0] accel_addr_i,
   output logic [7:0]  accel_data_o,
-  output logic        accel_valid_o
+  output logic        accel_valid_o,
 );
 
   // ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ module user_rom #(
   // ---------------------------------------------------------------------------
 
   // Define some registers to hold the requests fields
-  logic req_d, req_q, reg_q2; // Request valid
+  logic req_d, req_q, req_q2; // Request valid
   logic we_d, we_q, we_q2; // Write enable
   logic [ObiCfg.AddrWidth-1:0] addr_d, addr_q, addr_q2; // Internal address of the word to read
   logic [ObiCfg.IdWidth-1:0] id_d, id_q, id_q2; // Id of the request, must be same for the response
