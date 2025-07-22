@@ -1,148 +1,145 @@
-`include "common_cells/registers.svh"
-
 module user_edge_detect #(
-  parameter obi_pkg::obi_cfg_t ObiCfg = obi_pkg::ObiDefaultConfig,
-  parameter type obi_req_t = logic,
-  parameter type obi_rsp_t = logic
+  parameter type obi_req_t  = logic,
+  parameter type obi_rsp_t  = logic,
+  parameter type ObiCfg     = logic
 )(
   input  logic clk_i,
   input  logic rst_ni,
 
-  // OBI Slave Interface
-  input  obi_req_t obi_req_i,
-  output obi_rsp_t obi_rsp_o,
+  // OBI slave interface from CPU
+  input  obi_req_t  obi_req_i,
+  output obi_rsp_t  obi_rsp_o,
 
-  // ROM Access Interface
-  output logic        rom_req_o,
-  output logic [31:0] rom_addr_o,
-  input  logic [7:0]  rom_data_i,
-  input  logic        rom_valid_i
+  // ROM interface (master)
+  output logic              rom_req_o,
+  output logic [15:0]       rom_addr_o,
+  input  logic [31:0]       rom_data_i,
+  input  logic              rom_valid_i
 );
 
+  import obi_pkg::*;  // OBI constants
+  import user_pkg::*;
+
   typedef enum logic [1:0] {
-    IDLE,
-    FETCH,
-    COMPUTE,
-    DONE
+    IDLE    = 2'd0,
+    FETCH   = 2'd1,
+    COMPUTE = 2'd2,
+    DONE    = 2'd3
   } state_e;
 
   state_e state_q, state_d;
 
-  logic req_d, req_q;
-  logic we_d, we_q;
-  logic [ObiCfg.AddrWidth-1:0] addr_d, addr_q;
-  logic [ObiCfg.IdWidth-1:0] id_d, id_q;
-  logic [ObiCfg.DataWidth-1:0] wdata_d, wdata_q;
+  logic [31:0] center_pixel_q;
+  logic [7:0] result_q;
 
-  logic [7:0] pixel_buf[0:8];  // 3x3 window
-  logic [3:0] fetch_idx_q, fetch_idx_d;
+  logic start_q, start_d;
+  logic done_q;
 
-  logic signed [10:0] gx, gy;
-  logic [10:0] abs_gx, abs_gy;
-  logic [15:0] edge_sum_d, edge_sum_q;
+  // 3x3 window address (centered at addr_q), hardcoded pattern
+  logic [3:0] fetch_idx_q;
+  logic [15:0] base_addr_q;
+  logic rom_reading_q;
+  logic [7:0] pixels_q [0:8];
 
-  // Response signals
-  logic [31:0] rsp_data;
-  logic rsp_err;
+  // Output registers for CPU read
+  logic obi_read;
+  logic obi_write;
+  logic [31:0] obi_rdata;
 
-  // Registering inputs
-  `FF(req_q, req_d, '0)
-  `FF(we_q, we_d, '0)
-  `FF(addr_q, addr_d, '0)
-  `FF(id_q, id_d, '0)
-  `FF(wdata_q, wdata_d, '0)
-  `FF(fetch_idx_q, fetch_idx_d, 4'd0)
-  `FF(edge_sum_q, edge_sum_d, 16'd0)
-  `FF(state_q, state_d, IDLE)
-
-  assign req_d   = obi_req_i.req;
-  assign we_d    = obi_req_i.a.we;
-  assign addr_d  = obi_req_i.a.addr;
-  assign id_d    = obi_req_i.a.aid;
-  assign wdata_d = obi_req_i.a.wdata;
-
-  // ROM access
-  assign rom_req_o  = (state_q == FETCH);
-  assign rom_addr_o = fetch_idx_q;
-
-  // FSM
-  always_comb begin
-    state_d = state_q;
-    fetch_idx_d = fetch_idx_q;
-    edge_sum_d = edge_sum_q;
-
-    if (state_q == IDLE && req_q && we_q && addr_q[3:2] == 2'd1) begin
-      // Start trigger on write to addr 0x4
-      state_d = FETCH;
-      fetch_idx_d = 0;
-    end
-
-    if (state_q == FETCH && rom_valid_i) begin
-      pixel_buf[fetch_idx_q] = rom_data_i;
-      if (fetch_idx_q == 8) begin
-        state_d = COMPUTE;
-      end else begin
-        fetch_idx_d = fetch_idx_q + 1;
-      end
-    end
-
-    if (state_q == COMPUTE) begin
-      // Sobel Gx
-      gx = -pixel_buf[0] + pixel_buf[2]
-         - (pixel_buf[3] << 1) + (pixel_buf[5] << 1)
-         - pixel_buf[6] + pixel_buf[8];
-
-      // Sobel Gy
-      gy = -pixel_buf[0] - (pixel_buf[1] << 1) - pixel_buf[2]
-         + pixel_buf[6] + (pixel_buf[7] << 1) + pixel_buf[8];
-
-      abs_gx = (gx < 0) ? -gx : gx;
-      abs_gy = (gy < 0) ? -gy : gy;
-
-      edge_sum_d = abs_gx + abs_gy;
-      state_d = DONE;
-    end
-
-    if (state_q == DONE && req_q && !we_q && addr_q[3:2] == 2'd1) begin
-      // Read edge result
-      state_d = IDLE;
-    end
-  end
-
-  // Response generation
-  always_comb begin
-    rsp_data = 32'h0;
-    rsp_err  = 1'b0;
-
-    if (req_q) begin
-      unique case (addr_q[3:2])
-        2'd1: begin
-          // Edge result
-          if (we_q)
-            rsp_err = 1'b1;
-          else
-            rsp_data = {16'h0000, edge_sum_q};
-        end
-        2'd2: begin
-          // Status bit: bit 0 = done
-          if (we_q)
-            rsp_err = 1'b1;
-          else
-            rsp_data = {31'b0, (state_q == DONE)};
-        end
-        default: begin
-          rsp_err = 1'b1;
-        end
-      endcase
-    end
-  end
+  assign obi_read  = obi_req_i.req && !obi_req_i.we;
+  assign obi_write = obi_req_i.req &&  obi_req_i.we;
 
   // OBI response
-  assign obi_rsp_o.gnt          = obi_req_i.req;
-  assign obi_rsp_o.rvalid       = req_q;
-  assign obi_rsp_o.r.rdata      = rsp_data;
-  assign obi_rsp_o.r.rid        = id_q;
-  assign obi_rsp_o.r.err        = rsp_err;
-  assign obi_rsp_o.r.r_optional = '0;
+  assign obi_rsp_o.gnt   = obi_req_i.req; // always ready
+  assign obi_rsp_o.rvalid= obi_read;
+  assign obi_rsp_o.rdata = obi_rdata;
+
+  // OBI register map offsets
+  localparam int unsigned CENTER_REG_OFFSET = 0;
+  localparam int unsigned STATUS_REG_OFFSET = 4;
+  localparam int unsigned RESULT_REG_OFFSET = 8;
+
+  // CPU writes center pixel address to start
+  always_comb begin
+    start_d = start_q;
+    base_addr_q = center_pixel_q[15:0];
+    if (obi_write && obi_req_i.a.addr[3:0] == CENTER_REG_OFFSET) begin
+      start_d = 1'b1;
+    end
+  end
+
+  // FSM control
+  always_comb begin
+    state_d = state_q;
+    rom_req_o = 1'b0;
+    rom_addr_o = 16'd0;
+    done_q = 1'b0;
+
+    case (state_q)
+      IDLE: begin
+        if (start_q) begin
+          fetch_idx_q = 0;
+          state_d = FETCH;
+        end
+      end
+
+      FETCH: begin
+        rom_req_o = 1'b1;
+        rom_addr_o = base_addr_q - 17 + fetch_idx_q; // address offset for 3x3 grid
+        if (rom_valid_i) begin
+          pixels_q[fetch_idx_q] = rom_data_i[7:0]; // Only use lower byte
+          fetch_idx_q = fetch_idx_q + 1;
+          if (fetch_idx_q == 8)
+            state_d = COMPUTE;
+        end
+      end
+
+      COMPUTE: begin
+        automatic int gx, gy, mag;
+        gx = -pixels_q[0] + pixels_q[2]
+           - 2*pixels_q[3] + 2*pixels_q[5]
+           - pixels_q[6] + pixels_q[8];
+
+        gy = -pixels_q[0] - 2*pixels_q[1] - pixels_q[2]
+           + pixels_q[6] + 2*pixels_q[7] + pixels_q[8];
+
+        mag = (gx < 0 ? -gx : gx) + (gy < 0 ? -gy : gy);
+        result_q = (mag > 255) ? 8'hFF : mag[7:0];
+
+        state_d = DONE;
+      end
+
+      DONE: begin
+        done_q = 1'b1;
+        start_d = 1'b0;
+        state_d = IDLE;
+      end
+    endcase
+  end
+
+  // OBI read-back mux
+  always_comb begin
+    obi_rdata = 32'd0;
+    case (obi_req_i.a.addr[3:0])
+      STATUS_REG_OFFSET: obi_rdata = {31'd0, done_q};
+      RESULT_REG_OFFSET: obi_rdata = {24'd0, result_q};
+      CENTER_REG_OFFSET: obi_rdata = center_pixel_q;
+      default: obi_rdata = 32'hDEADBEEF;
+    endcase
+  end
+
+  // Registers
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      state_q <= IDLE;
+      start_q <= 1'b0;
+      center_pixel_q <= 32'd0;
+    end else begin
+      state_q <= state_d;
+      start_q <= start_d;
+      if (obi_write && obi_req_i.a.addr[3:0] == CENTER_REG_OFFSET)
+        center_pixel_q <= obi_req_i.wdata;
+    end
+  end
 
 endmodule

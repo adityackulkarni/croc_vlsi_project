@@ -13,74 +13,62 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   input  logic      rst_ni,
   input  logic      testmode_i,
   
-  input  sbr_obi_req_t user_sbr_obi_req_i, // User Sbr (rsp_o), Croc Mgr (req_i)
+  input  sbr_obi_req_t user_sbr_obi_req_i,
   output sbr_obi_rsp_t user_sbr_obi_rsp_o,
 
-  output mgr_obi_req_t user_mgr_obi_req_o, // User Mgr (req_o), Croc Sbr (rsp_i)
+  output mgr_obi_req_t user_mgr_obi_req_o,
   input  mgr_obi_rsp_t user_mgr_obi_rsp_i,
 
-  input  logic [      GpioCount-1:0] gpio_in_sync_i, // synchronized GPIO inputs
-  output logic [NumExternalIrqs-1:0] interrupts_o // interrupts to core
+  input  logic [      GpioCount-1:0] gpio_in_sync_i,
+  output logic [NumExternalIrqs-1:0] interrupts_o
 );
 
   assign interrupts_o = '0;  
 
+  ////////////////////////////
+  // User Manager MUX     //
+  ////////////////////////////
 
-  //////////////////////
-  // User Manager MUX //
-  /////////////////////
+  mgr_obi_req_t user_edge_detect_mgr_req;
+  mgr_obi_rsp_t user_edge_detect_mgr_rsp;
 
-  // No manager so we don't need a obi_mux module and just terminate the request properly
-  assign user_mgr_obi_req_o = '0;
-
+  assign user_mgr_obi_req_o = user_edge_detect_mgr_req;
+  assign user_edge_detect_mgr_rsp = user_mgr_obi_rsp_i;
 
   ////////////////////////////
   // User Subordinate DEMUX //
   ////////////////////////////
 
-  // ----------------------------------------------------------------------------------------------
-  // User Subordinate Buses
-  // ----------------------------------------------------------------------------------------------
-  
-  // collection of signals from the demultiplexer
   sbr_obi_req_t [NumDemuxSbr-1:0] all_user_sbr_obi_req;
   sbr_obi_rsp_t [NumDemuxSbr-1:0] all_user_sbr_obi_rsp;
 
-  // Subordinate Buses for UserEdgeDetect and UserROM
   sbr_obi_req_t user_edge_detect_obi_req;
   sbr_obi_rsp_t user_edge_detect_obi_rsp;
 
   sbr_obi_req_t user_rom_obi_req;
   sbr_obi_rsp_t user_rom_obi_rsp;
 
-  // Error Subordinate Bus
   sbr_obi_req_t user_error_obi_req;
   sbr_obi_rsp_t user_error_obi_rsp;
 
-  // Fanout into more readable signals
-  assign user_edge_detect_obi_req               = all_user_sbr_obi_req[UserEdgeDetect];
+  assign user_edge_detect_obi_req              = all_user_sbr_obi_req[UserEdgeDetect];
   assign all_user_sbr_obi_rsp[UserEdgeDetect]  = user_edge_detect_obi_rsp;
 
-  assign user_rom_obi_req                       = all_user_sbr_obi_req[UserRom];
+  assign user_rom_obi_req                      = all_user_sbr_obi_req[UserRom];
   assign all_user_sbr_obi_rsp[UserRom]         = user_rom_obi_rsp;
 
-  assign user_error_obi_req                     = all_user_sbr_obi_req[UserError];
+  assign user_error_obi_req                    = all_user_sbr_obi_req[UserError];
   assign all_user_sbr_obi_rsp[UserError]       = user_error_obi_rsp;
-
-
-  //-----------------------------------------------------------------------------------------------
-  // Demultiplex to User Subordinates according to address map
-  //-----------------------------------------------------------------------------------------------
 
   logic [cf_math_pkg::idx_width(NumDemuxSbr)-1:0] user_idx;
 
   addr_decode #(
-    .NoIndices ( NumDemuxSbr                    ),
-    .NoRules   ( NumDemuxSbrRules               ),
+    .NoIndices ( NumDemuxSbr ),
+    .NoRules   ( NumDemuxSbrRules ),
     .addr_t    ( logic[SbrObiCfg.DataWidth-1:0] ),
-    .rule_t    ( addr_map_rule_t                ),
-    .Napot     ( 1'b0                           ),
-    .idx_t     ( user_demux_outputs_e           )
+    .rule_t    ( addr_map_rule_t ),
+    .Napot     ( 1'b0 ),
+    .idx_t     ( user_demux_outputs_e )
   ) i_addr_decode_users (
     .addr_i           ( user_sbr_obi_req_i.a.addr ),
     .addr_map_i       ( user_addr_map             ),
@@ -109,29 +97,21 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .mgr_ports_rsp_i   ( all_user_sbr_obi_rsp )
   );
 
-
-//-------------------------------------------------------------------------------------------------
-// User Subordinates
-//-------------------------------------------------------------------------------------------------
-
-  // User Edge Detection Accelerator (user_edge_detect)
+  // User Edge Detection Accelerator
   user_edge_detect #(
-  .ObiCfg(SbrObiCfg),           // your obi config struct/parameter
-  .obi_req_t(sbr_obi_req_t),    // your OBI request type
-  .obi_rsp_t(sbr_obi_rsp_t)     // your OBI response type
-) i_user_edge_detect (
-  .clk_i     ( clk_i                 ),
-  .rst_ni    ( rst_ni                ),
-  .obi_req_i ( user_edge_detect_obi_req ),
-  .obi_rsp_o ( user_edge_detect_obi_rsp ),
-  .rom_req_o ( user_edge_detect_rom_req ),    // you must connect these ROM signals too
-  .rom_addr_o( user_edge_detect_rom_addr ),
-  .rom_data_i( user_edge_detect_rom_data ),
-  .rom_valid_i( user_edge_detect_rom_valid )
-);
+    .ObiCfg(SbrObiCfg),
+    .obi_req_t(sbr_obi_req_t),
+    .obi_rsp_t(sbr_obi_rsp_t)
+  ) i_user_edge_detect (
+    .clk_i     ( clk_i ),
+    .rst_ni    ( rst_ni ),
+    .obi_req_i ( user_edge_detect_obi_req ),
+    .obi_rsp_o ( user_edge_detect_obi_rsp ),
+    .mgr_req_o ( user_edge_detect_mgr_req ),
+    .mgr_rsp_i ( user_edge_detect_mgr_rsp )
+  );
 
-
-  // User ROM
+  // User ROM (accessed over manager port)
   user_rom #(
     .ObiCfg      ( SbrObiCfg     ),
     .obi_req_t   ( sbr_obi_req_t ),
@@ -143,7 +123,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .obi_rsp_o  ( user_rom_obi_rsp )
   );
 
-  // Error Subordinate
+  // Error responder for unmapped accesses
   obi_err_sbr #(
     .ObiCfg      ( SbrObiCfg     ),
     .obi_req_t   ( sbr_obi_req_t ),
@@ -153,7 +133,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   ) i_user_err (
     .clk_i,
     .rst_ni,
-    .testmode_i ( testmode_i      ),
+    .testmode_i ( testmode_i ),
     .obi_req_i  ( user_error_obi_req ),
     .obi_rsp_o  ( user_error_obi_rsp )
   );
