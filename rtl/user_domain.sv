@@ -105,15 +105,15 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   );
 
   // Edge Detection Accelerator instance
-  user_edge_detect i_user_edge_detect (
-    .clk_i       (clk_i),
-    .rst_ni      (rst_ni),
-    .rom_req_o   (user_edge_detect_rom_req),
-    .rom_addr_o  (user_edge_detect_rom_addr),
-    .rom_data_i  (user_edge_detect_rom_data),
-    .rom_valid_i (user_edge_detect_rom_valid),
-    .start_i     (gpio_in_sync_i[0]),   // Start triggered by GPIO 0
-    .done_o      (interrupts_o[0])      // Done signaled on interrupt 0
+  user_edge_detect #(
+    .ObiCfg(SbrObiCfg),
+    .obi_req_t(sbr_obi_req_t),
+    .obi_rsp_t(sbr_obi_rsp_t)
+  ) i_user_edge_detect (
+    .clk_i        (clk_i),
+    .rst_ni       (rst_ni),
+    .obi_req_i    (all_user_sbr_obi_req[UserEdgeAccel]),
+    .obi_rsp_o    (all_user_sbr_obi_rsp[UserEdgeAccel])
   );
 
   // Error subordinate responder
