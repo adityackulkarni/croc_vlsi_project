@@ -66,57 +66,43 @@ module user_edge_detect #(
     end
   endfunction
 
-  // Default assignments
-  rsp_data = '0;
-  rsp_err = 1'b0;
+  // Combinational logic for next-state and response
+  always_comb begin
+    // Default response values
+    rsp_data = 32'b0;
+    rsp_err = 1'b0;
 
-  // Pixel count next state logic
-  if (!rst_ni) begin
-    pixel_count_d = 0;
-    busy_d = 0;
-    result_d = 0;
-  end else begin
+    // Default next-state logic
     pixel_count_d = pixel_count_q;
     busy_d = busy_q;
     result_d = result_q;
-  end
 
-  // OBI request handling
-  always_comb begin
-    rsp_data = 32'hFFFF_FFFF;
-    rsp_err = 1'b0;
-
+    // Handle OBI request
     if (req_q) begin
       case(word_addr)
         2'b00: begin // 0x0: Pixel input (write only)
           if (we_q) begin
             if (!busy_q) begin
-              // Store incoming pixel at current count index
-              // Write pixel (lowest 8 bits of wdata_q)
-              // We must drive pixels array - needs procedural block, do in always_ff below
-              // Here just no read response (write only)
+              // Write handled in always_ff
             end else begin
               rsp_err = 1'b1; // busy, cannot write pixels
             end
           end else begin
             rsp_err = 1'b1; // read not allowed
           end
-          rsp_data = 32'h0; // dummy data on write
+          rsp_data = 32'h0; // dummy
         end
-        2'b01: begin // 0x4: Status register (read only)
-          if (!we_q) begin
-            // bit0 = done (not busy)
+        2'b01: begin // 0x4: Status register
+          if (!we_q)
             rsp_data = {31'd0, !busy_q};
-          end else begin
+          else
             rsp_err = 1'b1;
-          end
         end
-        2'b10: begin // 0x8: Result register (read only)
-          if (!we_q) begin
+        2'b10: begin // 0x8: Result register
+          if (!we_q)
             rsp_data = {24'd0, result_q};
-          end else begin
+          else
             rsp_err = 1'b1;
-          end
         end
         default: begin
           rsp_data = 32'hFFFF_FFFF;
@@ -125,6 +111,7 @@ module user_edge_detect #(
       endcase
     end
   end
+
 
   // Sequential logic for pixel loading and computation
   always_ff @(posedge clk_i or negedge rst_ni) begin

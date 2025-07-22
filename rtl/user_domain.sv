@@ -99,7 +99,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   );
 
   // Edge Detection Accelerator
-  edge_accel i_edge_accel (
+  user_edge_detect i_user_edge_detect (
     .clk_i,
     .rst_ni,
     .rom_req_o (edge_accel_rom_req),
