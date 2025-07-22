@@ -26,7 +26,7 @@ module user_rom #(
 );
 
   // ---------------------------------------------------------------------------
-  // ROM contents
+  // ROM contents (16 bytes)
   // ---------------------------------------------------------------------------
   logic [7:0] rom [0:15];
 
@@ -38,12 +38,12 @@ module user_rom #(
   end
 
   // ---------------------------------------------------------------------------
-  // OBI Request Pipeline (2-cycle response latency)
+  // OBI Request Pipeline (2-cycle latency)
   // ---------------------------------------------------------------------------
-  logic req_q,  req_q2;
-  logic we_q,   we_q2;
+  logic req_q, req_q2;
+  logic we_q, we_q2;
   logic [ObiCfg.AddrWidth-1:0] addr_q, addr_q2;
-  logic [ObiCfg.IdWidth-1:0]   id_q,   id_q2;
+  logic [ObiCfg.IdWidth-1:0]   id_q, id_q2;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -70,7 +70,7 @@ module user_rom #(
   end
 
   // ---------------------------------------------------------------------------
-  // OBI Response Generation
+  // OBI Response Generation (read only)
   // ---------------------------------------------------------------------------
   logic [31:0] rsp_data;
   logic        rsp_err;
@@ -80,6 +80,7 @@ module user_rom #(
     rsp_err  = 1'b0;
 
     if (req_q2 && ~we_q2) begin
+      // Read 4 consecutive bytes from ROM based on address upper bits
       rsp_data = {
         rom[{addr_q2[3:2], 2'b11}],
         rom[{addr_q2[3:2], 2'b10}],
@@ -87,7 +88,8 @@ module user_rom #(
         rom[{addr_q2[3:2], 2'b00}]
       };
     end else if (req_q2 && we_q2) begin
-      rsp_err = 1'b1;  // Writes not supported
+      // Writes not supported => error
+      rsp_err = 1'b1;
     end
   end
 
@@ -99,7 +101,7 @@ module user_rom #(
   assign obi_rsp_o.r.r_optional = '0;
 
   // ---------------------------------------------------------------------------
-  // Accelerator 8-bit read-only interface
+  // Accelerator 8-bit read-only interface (synchronous read)
   // ---------------------------------------------------------------------------
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
