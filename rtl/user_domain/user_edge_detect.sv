@@ -103,10 +103,19 @@ module user_edge_detect #(
         // 3:  0,-1; 4:  0,0; 5:  0,+1
         // 6: +1,-1; 7: +1,0; 8: +1,+1
 
-        // Calculation: base_addr_q + row_offset*16 + col_offset
-        // row and col offsets per index:
-        logic signed [4:0] row_offset [0:8] = '{-1,-1,-1, 0,0,0, 1,1,1};
-        logic signed [4:0] col_offset [0:8] = '{-1, 0, 1,-1,0,1,-1,0,1};
+        logic signed [4:0] row_offset [0:8];
+        logic signed [4:0] col_offset [0:8];
+
+        initial begin
+          row_offset[0] = -1; row_offset[1] = -1; row_offset[2] = -1;
+          row_offset[3] =  0; row_offset[4] =  0; row_offset[5] =  0;
+          row_offset[6] =  1; row_offset[7] =  1; row_offset[8] =  1;
+
+          col_offset[0] = -1; col_offset[1] =  0; col_offset[2] =  1;
+          col_offset[3] = -1; col_offset[4] =  0; col_offset[5] =  1;
+          col_offset[6] = -1; col_offset[7] =  0; col_offset[8] =  1;
+        end
+
 
         rom_addr_o = base_addr_q + row_offset[fetch_idx_q]*16 + col_offset[fetch_idx_q];
 
