@@ -25,28 +25,34 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   sbr_obi_req_t [NumDemuxSbr-1:0] all_user_sbr_obi_req;
   sbr_obi_rsp_t [NumDemuxSbr-1:0] all_user_sbr_obi_rsp;
 
-  // ROM Interface
+  // ROM Interface signals for user_edge_detect accelerator
+  sbr_obi_req_t user_edge_detect_rom_req;
+  sbr_obi_rsp_t user_edge_detect_rom_rsp;
+  logic         user_edge_detect_rom_valid;
+  logic [7:0]   user_edge_detect_rom_addr;
+  logic [7:0]   user_edge_detect_rom_data;
+
+  // Other subordinate bus requests and responses
   sbr_obi_req_t user_rom_obi_req;
   sbr_obi_rsp_t user_rom_obi_rsp;
 
-  // Edge Accelerator Interface
   sbr_obi_req_t user_edge_obi_req;
   sbr_obi_rsp_t user_edge_obi_rsp;
 
-  // Error Interface
   sbr_obi_req_t user_error_obi_req;
   sbr_obi_rsp_t user_error_obi_rsp;
 
-  // Signal assignments
-  assign user_rom_obi_req = all_user_sbr_obi_req[UserRom];
-  assign user_edge_obi_req = all_user_sbr_obi_req[UserEdgeAccel];
+  // Assign subordinate requests
+  assign user_rom_obi_req   = all_user_sbr_obi_req[UserRom];
+  assign user_edge_obi_req  = all_user_sbr_obi_req[UserEdgeAccel];
   assign user_error_obi_req = all_user_sbr_obi_req[UserError];
 
-  assign all_user_sbr_obi_rsp[UserRom] = user_rom_obi_rsp;
+  // Assign subordinate responses
+  assign all_user_sbr_obi_rsp[UserRom]       = user_rom_obi_rsp;
   assign all_user_sbr_obi_rsp[UserEdgeAccel] = user_edge_obi_rsp;
-  assign all_user_sbr_obi_rsp[UserError] = user_error_obi_rsp;
+  assign all_user_sbr_obi_rsp[UserError]     = user_error_obi_rsp;
 
-  // Address decoder
+  // Address decoder for subordinate buses
   logic [cf_math_pkg::idx_width(NumDemuxSbr)-1:0] user_idx;
 
   addr_decode #(
@@ -65,7 +71,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .default_idx_i    (UserError)
   );
 
-  // OBI Demux
+  // OBI Demultiplexer
   obi_demux #(
     .ObiCfg      (SbrObiCfg),
     .obi_req_t   (sbr_obi_req_t),
@@ -73,8 +79,8 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .NumMgrPorts (NumDemuxSbr),
     .NumMaxTrans (2)
   ) i_user_demux (
-    .clk_i,
-    .rst_ni,
+    .clk_i             (clk_i),
+    .rst_ni            (rst_ni),
     .sbr_port_select_i (user_idx),
     .sbr_port_req_i    (user_sbr_obi_req_i),
     .sbr_port_rsp_o    (user_sbr_obi_rsp_o),
@@ -82,35 +88,35 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .mgr_ports_rsp_i   (all_user_sbr_obi_rsp)
   );
 
-  // User ROM Instance (modified version)
+  // User ROM Instance (modified)
   user_rom #(
     .ObiCfg      (SbrObiCfg),
     .obi_req_t   (sbr_obi_req_t),
     .obi_rsp_t   (sbr_obi_rsp_t)
   ) i_user_rom (
-    .clk_i,
-    .rst_ni,
-    .obi_req_i  (user_rom_obi_req),
-    .obi_rsp_o  (user_rom_obi_rsp),
-    .accel_req_i (edge_accel_rom_req),
-    .accel_addr_i (edge_accel_rom_addr),
-    .accel_data_o (edge_accel_rom_data),
-    .accel_valid_o (edge_accel_rom_valid)
+    .clk_i        (clk_i),
+    .rst_ni       (rst_ni),
+    .obi_req_i    (user_rom_obi_req),
+    .obi_rsp_o    (user_rom_obi_rsp),
+    .accel_req_i  (user_edge_detect_rom_req),
+    .accel_addr_i (user_edge_detect_rom_addr),
+    .accel_data_o (user_edge_detect_rom_data),
+    .accel_valid_o(user_edge_detect_rom_valid)
   );
 
-  // Edge Detection Accelerator
+  // Edge Detection Accelerator instance
   user_edge_detect i_user_edge_detect (
-    .clk_i,
-    .rst_ni,
-    .rom_req_o (edge_accel_rom_req),
-    .rom_addr_o (edge_accel_rom_addr),
-    .rom_data_i (edge_accel_rom_data),
-    .rom_valid_i (edge_accel_rom_valid),
-    .start_i (gpio_in_sync_i[0]),  // Use GPIO 0 as start trigger
-    .done_o (interrupts_o[0])      // Use interrupt 0 for completion
+    .clk_i       (clk_i),
+    .rst_ni      (rst_ni),
+    .rom_req_o   (user_edge_detect_rom_req),
+    .rom_addr_o  (user_edge_detect_rom_addr),
+    .rom_data_i  (user_edge_detect_rom_data),
+    .rom_valid_i (user_edge_detect_rom_valid),
+    .start_i     (gpio_in_sync_i[0]),   // Start triggered by GPIO 0
+    .done_o      (interrupts_o[0])      // Done signaled on interrupt 0
   );
 
-  // Error Subordinate
+  // Error subordinate responder
   obi_err_sbr #(
     .ObiCfg      (SbrObiCfg),
     .obi_req_t   (sbr_obi_req_t),
@@ -118,11 +124,11 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .NumMaxTrans (1),
     .RspData     (32'hBADCAB1E)
   ) i_user_err (
-    .clk_i,
-    .rst_ni,
-    .testmode_i (testmode_i),
-    .obi_req_i  (user_error_obi_req),
-    .obi_rsp_o  (user_error_obi_rsp)
+    .clk_i       (clk_i),
+    .rst_ni      (rst_ni),
+    .testmode_i  (testmode_i),
+    .obi_req_i   (user_error_obi_req),
+    .obi_rsp_o   (user_error_obi_rsp)
   );
 
 endmodule
