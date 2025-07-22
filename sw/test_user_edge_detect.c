@@ -39,11 +39,15 @@ uint8_t sobel_software(uint8_t *w) {
        + 0*w[3] + 0*w[4] + 0*w[5]
        + (1)*w[6] + (2)*w[7] + (1)*w[8];
 
-    int g = abs(gx) + abs(gy);
+    int abs_gx = gx < 0 ? -gx : gx;
+    int abs_gy = gy < 0 ? -gy : gy;
+    int g = abs_gx + abs_gy;
+
     if (g > 255) g = 255;
 
     return (uint8_t)g;
 }
+
 
 int main() {
     uart_init();
