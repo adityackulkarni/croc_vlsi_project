@@ -3,103 +3,87 @@
 #include "gpio.h"
 #include "util.h"
 
-#define TB_FREQUENCY     20000000
-#define TB_BAUDRATE      115200
+#define TB_FREQUENCY 10000000
+#define TB_BAUDRATE  115200
 
-#define USER_EDGE_DETECT_BASE_ADDR 0x20000000
+// Base address of edge detection accelerator (adjust accordingly)
+#define USER_EDGE_DETECT_BASE_ADDR 0x20001000
 
-#define EDGE_DETECT_INPUT_OFFSET   0x0
-#define EDGE_DETECT_START_OFFSET   0x4
-#define EDGE_DETECT_STATUS_OFFSET  0x8
-#define EDGE_DETECT_RESULT_OFFSET  0xC
+// Offsets for accelerator registers (example)
+#define EDGE_DETECT_PIXEL_OFFSET   0x00  // Write pixel value here (assume FIFO or 9 writes)
+#define EDGE_DETECT_RESULT_OFFSET  0x08  // Read edge detection result here
+#define EDGE_DETECT_STATUS_OFFSET  0x0C  // Read status: 1 = done, 0 = busy
 
-const int8_t Gx[3][3] = {
-    {-1, 0, 1},
-    {-2, 0, 2},
-    {-1, 0, 1}
+// 3x3 windows to test (8 windows)
+uint8_t windows[8][9] = {
+    {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x10, 0x80, 0x10, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x10, 0x80, 0x10, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x10, 0x40, 0x10, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x10, 0x90, 0x10, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x10, 0x90, 0x10, 0x00, 0x00, 0x00}
 };
 
-const int8_t Gy[3][3] = {
-    { 1,  2,  1},
-    { 0,  0,  0},
-    {-1, -2, -1}
-};
+// Simple software Sobel edge detection for 3x3 window
+uint8_t sobel_software(uint8_t *w) {
+    int gx = 0;
+    int gy = 0;
 
-static inline uint8_t clamp_int_to_uint8(int val) {
-    if (val < 0) return 0;
-    if (val > 255) return 255;
-    return (uint8_t)val;
-}
+    gx = (-1)*w[0] + 0*w[1] + (1)*w[2]
+       + (-2)*w[3] + 0*w[4] + (2)*w[5]
+       + (-1)*w[6] + 0*w[7] + (1)*w[8];
 
-uint8_t sobel_edge_3x3(uint8_t window[3][3]) {
-    int gx = 0, gy = 0;
-    for (int r = 0; r < 3; r++) {
-        for (int c = 0; c < 3; c++) {
-            gx += window[r][c] * Gx[r][c];
-            gy += window[r][c] * Gy[r][c];
-        }
-    }
-    int mag = (gx*gx + gy*gy);
-    mag = (int)(mag >> 1);
-    return clamp_int_to_uint8(mag);
+    gy = (-1)*w[0] + (-2)*w[1] + (-1)*w[2]
+       + 0*w[3] + 0*w[4] + 0*w[5]
+       + (1)*w[6] + (2)*w[7] + (1)*w[8];
+
+    int g = abs(gx) + abs(gy);
+    if (g > 255) g = 255;
+
+    return (uint8_t)g;
 }
 
 int main() {
     uart_init();
+    printf("Edge detection accelerator test\n");
 
-    printf("=== Starting Edge Detection Test ===\n");
-    uart_write_flush();
+    uint32_t t0, t1, t2, t3;
+    uint8_t sw_results[8];
+    uint8_t hw_results[8];
 
-    uint8_t test_windows[8][3][3] = {
-        {{ 10,  10,  10}, { 10,  10,  10}, { 10,  10,  10}},
-        {{  0, 255,   0}, {255,   0, 255}, {  0, 255,   0}},
-        {{  0,  50, 100}, {150, 200, 250}, {255, 255, 255}},
-        {{255, 255, 255}, {255,   0, 255}, {255, 255, 255}},
-        {{  0,   0,   0}, {  0, 255,   0}, {  0,   0,   0}},
-        {{100, 150, 100}, {150, 255, 150}, {100, 150, 100}},
-        {{  0, 100,   0}, {100, 255, 100}, {  0, 100,   0}},
-        {{255, 128,   0}, {128,   0, 128}, {  0, 128, 255}}
-    };
-
-    uint8_t software_results[8];
-    uint8_t hardware_results[8];
-
-    printf("Calculating software results...\n");
+    // Software edge detection timing
+    asm volatile("csrr %0, mcycle" : "=r"(t0)::"memory");
     for (int i = 0; i < 8; i++) {
-        software_results[i] = sobel_edge_3x3(test_windows[i]);
-        printf("SW Test %x: Result = %x\n", i, software_results[i]);
+        sw_results[i] = sobel_software(windows[i]);
     }
+    asm volatile("csrr %0, mcycle" : "=r"(t1)::"memory");
 
-    printf("Sending to hardware accelerator...\n");
+    // Hardware edge detection timing
+    asm volatile("csrr %0, mcycle" : "=r"(t2)::"memory");
     for (int i = 0; i < 8; i++) {
-        uint8_t center_pixel = test_windows[i][1][1];
-        printf("HW Test %x: Writing center pixel = %x\n", i, center_pixel);
-        *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_INPUT_OFFSET) = (uint32_t)center_pixel;
-
-        printf("HW Test %d: Starting computation...\n", i);
-        *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_START_OFFSET) = 1;
-
-        int timeout = 100000;
-        while (*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_STATUS_OFFSET) == 0 && timeout-- > 0);
-
-        if (timeout <= 0) {
-            printf("HW Test %x: ERROR: Timeout waiting for accelerator\n", i);
-            hardware_results[i] = 0xFF; // mark as failed
-            continue;
+        // Write all 9 pixels to accelerator
+        for (int p = 0; p < 9; p++) {
+            *reg32(USER_EDGE_DETECT_BASE_ADDR, EDGE_DETECT_PIXEL_OFFSET) = windows[i][p];
         }
-
-        hardware_results[i] = (uint8_t)*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_RESULT_OFFSET);
-        printf("HW Test %x: Result = %x\n", i, hardware_results[i]);
+        // Poll accelerator status for completion
+        while (*reg32(USER_EDGE_DETECT_BASE_ADDR, EDGE_DETECT_STATUS_OFFSET) == 0) {
+            // busy wait
+        }
+        // Read hardware result
+        hw_results[i] = *reg32(USER_EDGE_DETECT_BASE_ADDR, EDGE_DETECT_RESULT_OFFSET);
     }
+    asm volatile("csrr %0, mcycle" : "=r"(t3)::"memory");
 
-    printf("Comparing results...\n");
+    // Print results
     for (int i = 0; i < 8; i++) {
-        printf("Test %x: SW = %x, HW = %x, Center = %x\n",
-               i, software_results[i], hardware_results[i], test_windows[i][1][1]);
+        printf("Window %d: SW %3d, HW %3d\n", i, sw_results[i], hw_results[i]);
     }
+
+    printf("Software time: %d cycles\n", t1 - t0);
+    printf("Hardware time: %d cycles\n", t3 - t2);
 
     uart_write_flush();
-
-    printf("=== Done ===\n");
     return 0;
 }

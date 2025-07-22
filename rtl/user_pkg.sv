@@ -21,29 +21,34 @@ package user_pkg;
   // User Subordinate Address maps ////
   /////////////////////////////////////
 
+  // Number of subordinates (ROM + EdgeAccel)
   localparam int unsigned NumUserDomainSubordinates = 2;
 
-  // Base addresses and ranges for subordinates
-  localparam bit [31:0] UserEdgeDetectAddrOffset = croc_pkg::UserBaseAddr + 32'h0000_0000;  // Example base address
-  localparam bit [31:0] UserEdgeDetectAddrRange  = 32'h0000_1000;  // 4 KB range
+  // Address ranges and offsets
+  localparam bit [31:0] UserRomAddrOffset       = croc_pkg::UserBaseAddr;      // e.g., 32'h2000_0000
+  localparam bit [31:0] UserRomAddrRange        = 32'h0000_1000;               // 4 KB for ROM
 
-  localparam bit [31:0] UserRomAddrOffset        = croc_pkg::UserBaseAddr + 32'h0000_1000;  // ROM after EdgeDetect
-  localparam bit [31:0] UserRomAddrRange         = 32'h0000_1000;  // 4 KB range
+  localparam bit [31:0] UserEdgeAccelAddrOffset = croc_pkg::UserBaseAddr + 32'h0000_1000; // next 4 KB region
+  localparam bit [31:0] UserEdgeAccelAddrRange  = 32'h0000_1000;               // 4 KB for Edge Accelerator
 
-  localparam int unsigned NumDemuxSbrRules  = NumUserDomainSubordinates; // number of address rules in the decoder
-  localparam int unsigned NumDemuxSbr       = NumDemuxSbrRules + 1; // additional OBI error, used for signal arrays
+  // Number of address decoder rules = number of subordinates
+  localparam int unsigned NumDemuxSbrRules = NumUserDomainSubordinates;
 
-  // Enum for bus indices for subordinates + error
+  // Number of subordinate ports = rules + 1 (for error)
+  localparam int unsigned NumDemuxSbr = NumDemuxSbrRules + 1;
+
+  // Enumerated indices for demux outputs (subordinate buses)
   typedef enum int {
-    UserEdgeDetect = 0,
-    UserRom        = 1,
-    UserError      = 2
+    UserError     = 0, // default fallback subordinate
+    UserRom       = 1,
+    UserEdgeAccel = 2
   } user_demux_outputs_e;
 
-  // Address rules given to the address decoder for subordinates (error default excluded)
+  // Address map rules used by addr_decode module
+  // UserError is default and thus not included here
   localparam croc_pkg::addr_map_rule_t [NumDemuxSbrRules-1:0] user_addr_map = '{
-    '{ idx: UserEdgeDetect, start_addr: UserEdgeDetectAddrOffset, end_addr: UserEdgeDetectAddrOffset + UserEdgeDetectAddrRange },
-    '{ idx: UserRom,        start_addr: UserRomAddrOffset,        end_addr: UserRomAddrOffset        + UserRomAddrRange }
+    '{ idx: UserRom,       start_addr: UserRomAddrOffset,       end_addr: UserRomAddrOffset + UserRomAddrRange - 1 },
+    '{ idx: UserEdgeAccel, start_addr: UserEdgeAccelAddrOffset, end_addr: UserEdgeAccelAddrOffset + UserEdgeAccelAddrRange - 1 }
   };
 
 endpackage

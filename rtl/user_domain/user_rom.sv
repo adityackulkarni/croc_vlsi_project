@@ -1,137 +1,82 @@
-// New
 `include "common_cells/registers.svh"
 
-// simple ROM
 module user_rom #(
-  /// The OBI configuration for all ports.
-  parameter obi_pkg::obi_cfg_t           ObiCfg      = obi_pkg::ObiDefaultConfig,
-  /// The request struct.
-  parameter type                         obi_req_t   = logic,
-  /// The response struct.
-  parameter type                         obi_rsp_t   = logic
+  parameter obi_pkg::obi_cfg_t ObiCfg = obi_pkg::ObiDefaultConfig,
+  parameter type obi_req_t = logic,
+  parameter type obi_rsp_t = logic,
+  parameter int IMG_WIDTH = 16,  // Reduced from 64 to 16
+  parameter int IMG_HEIGHT = 16  // Reduced from 64 to 16
 ) (
-  /// Clock
-  input  logic clk_i,
-  /// Active-low reset
-  input  logic rst_ni,
-
-// OBI Subordinate Interface
-
-  /// OBI request interface
+  input  logic    clk_i,
+  input  logic    rst_ni,
+  
+  // OBI Interface
   input  obi_req_t obi_req_i,
-  /// OBI response interface
   output obi_rsp_t obi_rsp_o,
 
-// Accelerator Interface
+  // Accelerator Interface
   input  logic        accel_req_i,
   input  logic [31:0] accel_addr_i,
   output logic [7:0]  accel_data_o,
-  output logic        accel_valid_o,
+  output logic        accel_valid_o
 );
 
   // ---------------------------------------------------------------------------
-  // ROM contents
+  // ROM Storage (16x16 image = 256 bytes)
   // ---------------------------------------------------------------------------
+  localparam DEPTH = IMG_WIDTH * IMG_HEIGHT;
+  logic [7:0] image_ram [0:DEPTH-1];
 
-  logic [7:0] rom [0:15];  // 16 bytes (4 words)
+  // Initialize with test pattern (similar to exercise style)
   initial begin
-    rom[0]  = 8'h01; rom[1]  = 8'h02; rom[2]  = 8'h03; rom[3]  = 8'h04;
-    rom[4]  = 8'h05; rom[5]  = 8'h06; rom[6]  = 8'h07; rom[7]  = 8'h08;
-    rom[8]  = 8'h09; rom[9]  = 8'h0A; rom[10] = 8'h0B; rom[11] = 8'h0C;
-    rom[12] = 8'h0D; rom[13] = 8'h0E; rom[14] = 8'h0F; rom[15] = 8'h10;
-  end
-
-  // ---------------------------------------------------------------------------
-  // OBI Request Pipeline (2-cycle response latency)
-  // ---------------------------------------------------------------------------
-
-  // Define some registers to hold the requests fields
-  logic req_d, req_q, req_q2; // Request valid
-  logic we_d, we_q, we_q2; // Write enable
-  logic [ObiCfg.AddrWidth-1:0] addr_d, addr_q, addr_q2; // Internal address of the word to read
-  logic [ObiCfg.IdWidth-1:0] id_d, id_q, id_q2; // Id of the request, must be same for the response
-
-  // Wire the registers holding the request
-  // The code such that the ROM will respond after 2 cycles instead of 1
-  assign req_d = obi_req_i.req;
-  assign id_d = obi_req_i.a.aid;
-  assign we_d = obi_req_i.a.we;
-  assign addr_d = obi_req_i.a.addr;
-
-  always_ff @(posedge (clk_i) or negedge (rst_ni)) begin
-    if (!rst_ni) begin
-      req_q <= '0;
-      id_q <= '0;
-      we_q <= '0;
-      addr_q <= '0;
-      req_q2 <= '0;
-      id_q2 <= '0;
-      we_q2 <= '0;
-      addr_q2 <= '0;
-    end else begin
-      req_q <= req_d;
-      id_q <= id_d;
-      we_q <= we_d;
-      addr_q <= addr_d;
-      req_q2 <= req_q;
-      id_q2 <= id_q;
-      we_q2 <= we_q;
-      addr_q2 <= addr_q;
+    for (int i = 0; i < DEPTH; i++) begin
+      image_ram[i] = i % 16;  // Reduced pattern range
     end
   end
 
   // ---------------------------------------------------------------------------
-  // OBI Response Generation
+  // OBI Interface (2-cycle latency like exercise)
   // ---------------------------------------------------------------------------
+  logic req_q, req_qq;
+  logic [ObiCfg.AddrWidth-1:0] addr_q, addr_qq;
+  logic [ObiCfg.IdWidth-1:0] id_q, id_qq;
+  logic we_q, we_qq;
 
-  // Assign the response data
-  
+  // First pipeline stage (like user_rom.sv)
+  `FF(req_q, obi_req_i.req, '0);
+  `FF(id_q, obi_req_i.a.aid, '0);
+  `FF(we_q, obi_req_i.a.we, '0);
+  `FF(addr_q, obi_req_i.a.addr, '0);
+
+  // Second pipeline stage (for 2-cycle latency)
+  `FF(req_qq, req_q, '0);
+  `FF(id_qq, id_q, '0);
+  `FF(we_qq, we_q, '0);
+  `FF(addr_qq, addr_q, '0);
+
+  // OBI Response (similar to exercise)
   logic [31:0] rsp_data;
-  logic rsp_err;
-  
   always_comb begin
-    rsp_data = 32'h0;
-    rsp_err  = 1'b0;
-
-    if (req_q2 && ~we_q2) begin
-      // Word-aligned access
-      rsp_data = {
-        rom[{addr_q2[3:2], 2'b11}],
-        rom[{addr_q2[3:2], 2'b10}],
-        rom[{addr_q2[3:2], 2'b01}],
-        rom[{addr_q2[3:2], 2'b00}]
-      };
-    end else if (req_q2 && we_q2) begin
-      rsp_err = 1'b1;  // Writes not supported
+    rsp_data = '0;
+    if (req_qq && ~we_qq) begin
+      rsp_data = {24'h0, image_ram[addr_qq]}; // Byte access
     end
   end
 
-  // Wire the response
-  // A channel
   assign obi_rsp_o.gnt = obi_req_i.req;
-  // R channel:
-  assign obi_rsp_o.rvalid = req_q2;
+  assign obi_rsp_o.rvalid = req_qq;
   assign obi_rsp_o.r.rdata = rsp_data;
-  assign obi_rsp_o.r.rid = id_q2;
-  assign obi_rsp_o.r.err = rsp_err;
+  assign obi_rsp_o.r.rid = id_qq;
+  assign obi_rsp_o.r.err = we_qq;
   assign obi_rsp_o.r.r_optional = '0;
 
   // ---------------------------------------------------------------------------
-  // Accelerator Read Port (8-bit addressable)
+  // Accelerator Interface (similar to setbitacc)
   // ---------------------------------------------------------------------------
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      accel_data_o  <= '0;
-      accel_valid_o <= 1'b0;
-    end else begin
-      if (accel_req_i && accel_addr_i < 16) begin
-        accel_data_o  <= rom[accel_addr_i[3:0]];  // 4-bit address: 0–15
-        accel_valid_o <= 1'b1;
-      end else begin
-        accel_data_o  <= 8'h00;
-        accel_valid_o <= 1'b0;
-      end
-    end
-  end
+  logic [7:0] accel_data_q;
+  logic accel_valid_q;
+
+  `FF(accel_data_o, accel_req_i ? image_ram[accel_addr_i] : '0, '0);
+  `FF(accel_valid_o, accel_req_i, '0);
 
 endmodule
