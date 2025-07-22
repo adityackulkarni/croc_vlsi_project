@@ -3,7 +3,7 @@
 #include "gpio.h"
 #include "util.h"
 
-#define TB_FREQUENCY 10000000
+#define TB_FREQUENCY 20000000
 #define TB_BAUDRATE  115200
 
 // Base address of edge detection accelerator (adjust accordingly)
