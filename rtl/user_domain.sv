@@ -30,26 +30,8 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   // User Manager MUX //
   /////////////////////
 
-  // No manager so we don't need a obi_mux module and just terminate the request properly
-  // Jakub - I think we need to edit this piece of code in order to be able to issue requests as master
   assign user_mgr_obi_req_o = '0; // this needs to be attached as an output of the module
-  // ----------------------------------------------------------------------------------------------
-  // User Manager Buses
-  // ----------------------------------------------------------------------------------------------
-  // TODO: Do I need the same structure as with User Subordinate buses?
 
-  //-----------------------------------------------------------------------------------------------
-  // Multiplex to Croc Subordinates according to address map
-  //-----------------------------------------------------------------------------------------------
-  // TODO: How to properly multiplex signals? We only need to access SRAM0. How to use obi_mux?
-  // TODO: Do I need some sort of addr_decode as in the subordinate case?
-
-  //-------------------------------------------------------------------------------------------------
-  // Croc Subordinates
-  //-------------------------------------------------------------------------------------------------
-  // TODO: Do I need to instantiate SRAM0? How does it work?
-
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////
   // User Subordinate DEMUX //
   ////////////////////////////
@@ -140,8 +122,6 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .obi_rsp_o  ( user_error_obi_rsp )
   );
 
-  // NOTE 3 - We instantiate sobel_accel_top.sv (Change this name)
-  // TODO : instantiate the top module peripheral, pass OBI stuff and SbrObiCfg too
-
+  
 
 endmodule
