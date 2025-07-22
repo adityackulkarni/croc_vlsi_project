@@ -103,9 +103,19 @@ module user_edge_detect #(
       state_d = DONE;
     end
 
-    if (state_q == DONE && req_q && !we_q && addr_q[3:2] == 2'd1) begin
+    //if (state_q == DONE && req_q && !we_q && addr_q[3:2] == 2'd1) begin
       // Read edge result
-      state_d = IDLE;
+      //state_d = IDLE;
+    //end
+
+    if (state_q == DONE) begin
+      if (obi_req_i.req && obi_req_i.we == 0) begin
+        // respond to read with valid = 1
+        obi_rsp_o.gnt = 1;
+        obi_rsp_o.rvalid = 1;
+        obi_rsp_o.rdata = result;  // Make sure result is valid
+        state_d = IDLE;
+      end
     end
   end
 

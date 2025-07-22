@@ -67,39 +67,44 @@ int main() {
     printf("Calculating software results...\n");
     for (int i = 0; i < 8; i++) {
         software_results[i] = sobel_edge_3x3(test_windows[i]);
-        printf("SW Test %x: Result = %x\n", i, software_results[i]);
+        printf("SW Test %x: Result = 0x%x\n", i, software_results[i]);
     }
 
+    uart_write_flush();
     printf("Sending to hardware accelerator...\n");
+
     for (int i = 0; i < 8; i++) {
         uint8_t center_pixel = test_windows[i][1][1];
-        printf("HW Test %x: Writing center pixel = %x\n", i, center_pixel);
+        printf("HW Test %x: Writing center pixel = 0x%x\n", i, center_pixel);
         *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_INPUT_OFFSET) = (uint32_t)center_pixel;
 
-        printf("HW Test %d: Starting computation...\n", i);
+        printf("HW Test %x: Starting computation...\n", i);
         *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_START_OFFSET) = 1;
 
-        int timeout = 100000;
-        while (*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_STATUS_OFFSET) == 0 && timeout-- > 0);
+        int timeout = 500000;
+        uint32_t status = 0;
+        while (((status = *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_STATUS_OFFSET)) == 0) && timeout-- > 0) {
+            if (timeout % 10000 == 0)
+                printf("  ... waiting, status = 0x%x\n", status);
+        }
 
         if (timeout <= 0) {
-            printf("HW Test %x: ERROR: Timeout waiting for accelerator\n", i);
-            hardware_results[i] = 0xFF; // mark as failed
+            printf("HW Test %x: ERROR: Timeout waiting for accelerator (status = 0x%x)\n", i, status);
+            hardware_results[i] = 0xFF;
             continue;
         }
 
         hardware_results[i] = (uint8_t)*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_RESULT_OFFSET);
-        printf("HW Test %x: Result = %x\n", i, hardware_results[i]);
+        printf("HW Test %x: Result = 0x%x\n", i, hardware_results[i]);
     }
 
     printf("Comparing results...\n");
     for (int i = 0; i < 8; i++) {
-        printf("Test %x: SW = %x, HW = %x, Center = %x\n",
+        printf("Test %x: SW = 0x%x, HW = 0x%x, Center = 0x%x\n",
                i, software_results[i], hardware_results[i], test_windows[i][1][1]);
     }
 
     uart_write_flush();
-
     printf("=== Done ===\n");
     return 0;
 }
