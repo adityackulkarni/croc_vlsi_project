@@ -109,11 +109,11 @@ module user_edge_detect #(
     //end
 
     if (state_q == DONE) begin
-      if (obi_req_i.req && obi_req_i.we == 0) begin
+      if (obi_req_i.req && obi_req_i.a.we == 0) begin
         // respond to read with valid = 1
         obi_rsp_o.gnt = 1;
         obi_rsp_o.rvalid = 1;
-        obi_rsp_o.rdata = result;  // Make sure result is valid
+        obi_rsp_o.r.rdata = rsp_data;  // Make sure result is valid
         state_d = IDLE;
       end
     end
