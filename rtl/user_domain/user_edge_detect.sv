@@ -71,8 +71,8 @@ module user_edge_detect #(
     fetch_idx_d = fetch_idx_q;
     edge_sum_d = edge_sum_q;
 
-    if (state_q == IDLE && req_q && we_q && addr_q[3:2] == 2'd0) begin
-      // Start trigger on write to addr 0x0
+    if (state_q == IDLE && req_q && we_q && addr_q[3:2] == 2'd1) begin
+      // Start trigger on write to addr 0x4
       state_d = FETCH;
       fetch_idx_d = 0;
     end
@@ -103,19 +103,9 @@ module user_edge_detect #(
       state_d = DONE;
     end
 
-    //if (state_q == DONE && req_q && !we_q && addr_q[3:2] == 2'd1) begin
+    if (state_q == DONE && req_q && !we_q && addr_q[3:2] == 2'd1) begin
       // Read edge result
-      //state_d = IDLE;
-    //end
-
-    if (state_q == DONE) begin
-      if (obi_req_i.req && obi_req_i.a.we == 0) begin
-        // respond to read with valid = 1
-        obi_rsp_o.gnt = 1;
-        obi_rsp_o.rvalid = 1;
-        obi_rsp_o.r.rdata = rsp_data;  // Make sure result is valid
-        state_d = IDLE;
-      end
+      state_d = IDLE;
     end
   end
 
@@ -126,19 +116,15 @@ module user_edge_detect #(
 
     if (req_q) begin
       unique case (addr_q[3:2])
-        2'd0: begin
-          // Trigger write (start computation)
-          if (!we_q)
-            rsp_err = 1'b1;
-        end
         2'd1: begin
-          // Edge result read
+          // Edge result
           if (we_q)
             rsp_err = 1'b1;
           else
             rsp_data = {16'h0000, edge_sum_q};
         end
-        2'd2: begin  // addr 0x8
+        2'd2: begin
+          // Status bit: bit 0 = done
           if (we_q)
             rsp_err = 1'b1;
           else
@@ -158,6 +144,5 @@ module user_edge_detect #(
   assign obi_rsp_o.r.rid        = id_q;
   assign obi_rsp_o.r.err        = rsp_err;
   assign obi_rsp_o.r.r_optional = '0;
-  
 
 endmodule
