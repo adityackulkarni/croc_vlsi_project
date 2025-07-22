@@ -14,7 +14,16 @@ module user_edge_detect #(
   output logic              rom_req_o,
   output logic [15:0]       rom_addr_o,
   input  logic [31:0]       rom_data_i,
-  input  logic              rom_valid_i
+  input  logic              rom_valid_i,
+
+  // Add missing manager interface signals as unused inputs/outputs
+  output logic              mgr_req_o,    // added as output, tied low internally
+  output logic [15:0]       mgr_addr_o,   // dummy
+  output logic              mgr_we_o,     // dummy
+  output logic [31:0]       mgr_wdata_o,  // dummy
+  input  logic              mgr_gnt_i,    // dummy input
+  input  logic              mgr_rvalid_i, // dummy input
+  input  logic [31:0]       mgr_rdata_i   // dummy input
 );
 
   import obi_pkg::*;  // OBI constants
@@ -141,5 +150,11 @@ module user_edge_detect #(
         center_pixel_q <= obi_req_i.wdata;
     end
   end
+
+  // Tie off unused manager outputs
+  assign mgr_req_o   = 1'b0;
+  assign mgr_addr_o  = 16'd0;
+  assign mgr_we_o    = 1'b0;
+  assign mgr_wdata_o = 32'd0;
 
 endmodule
