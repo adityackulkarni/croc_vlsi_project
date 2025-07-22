@@ -8,9 +8,10 @@
 
 #define USER_EDGE_DETECT_BASE_ADDR 0x20000000
 
-#define EDGE_DETECT_START_OFFSET   0x4   // Write center pixel to start, read result
-#define EDGE_DETECT_RESULT_OFFSET  0x4   // Same as start (readback)
-#define EDGE_DETECT_STATUS_OFFSET  0x8   // Bit 0 = done
+#define EDGE_DETECT_INPUT_OFFSET   0x0
+#define EDGE_DETECT_START_OFFSET   0x4
+#define EDGE_DETECT_STATUS_OFFSET  0x8
+#define EDGE_DETECT_RESULT_OFFSET  0xC
 
 const int8_t Gx[3][3] = {
     {-1, 0, 1},
@@ -38,14 +39,16 @@ uint8_t sobel_edge_3x3(uint8_t window[3][3]) {
             gy += window[r][c] * Gy[r][c];
         }
     }
-    int mag = (gx * gx + gy * gy);
+    int mag = (gx*gx + gy*gy);
     mag = (int)(mag >> 1);
     return clamp_int_to_uint8(mag);
 }
 
 int main() {
     uart_init();
+
     printf("=== Starting Edge Detection Test ===\n");
+    uart_write_flush();
 
     uint8_t test_windows[8][3][3] = {
         {{ 10,  10,  10}, { 10,  10,  10}, { 10,  10,  10}},
@@ -64,42 +67,38 @@ int main() {
     printf("Calculating software results...\n");
     for (int i = 0; i < 8; i++) {
         software_results[i] = sobel_edge_3x3(test_windows[i]);
-        printf("SW Test %x: Result = 0x%x\n", i, software_results[i]);
+        printf("SW Test %x: Result = %x\n", i, software_results[i]);
     }
 
     printf("Sending to hardware accelerator...\n");
-
     for (int i = 0; i < 8; i++) {
         uint8_t center_pixel = test_windows[i][1][1];
-        printf("HW Test %x: Writing center pixel = 0x%x\n", i, center_pixel);
+        printf("HW Test %x: Writing center pixel = %x\n", i, center_pixel);
+        *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_INPUT_OFFSET) = (uint32_t)center_pixel;
 
-        // Start hardware computation by writing center pixel
-        *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_START_OFFSET) = center_pixel;
+        printf("HW Test %d: Starting computation...\n", i);
+        *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_START_OFFSET) = 1;
 
-        // Poll status until done
-        int timeout = 500000;
-        uint32_t status = 0;
-        while (((status = *(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_STATUS_OFFSET)) == 0) && timeout-- > 0) {
-            if (timeout % 10000 == 0)
-                printf("  ... waiting, status = 0x%x\n", status);
-        }
+        int timeout = 100000;
+        while (*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_STATUS_OFFSET) == 0 && timeout-- > 0);
 
         if (timeout <= 0) {
-            printf("HW Test %x: ERROR: Timeout waiting for accelerator (status = 0x%x)\n", i, status);
-            hardware_results[i] = 0xFF;
+            printf("HW Test %x: ERROR: Timeout waiting for accelerator\n", i);
+            hardware_results[i] = 0xFF; // mark as failed
             continue;
         }
 
-        // Read result
         hardware_results[i] = (uint8_t)*(volatile uint32_t*)(USER_EDGE_DETECT_BASE_ADDR + EDGE_DETECT_RESULT_OFFSET);
-        printf("HW Test %x: Result = 0x%x\n", i, hardware_results[i]);
+        printf("HW Test %x: Result = %x\n", i, hardware_results[i]);
     }
 
     printf("Comparing results...\n");
     for (int i = 0; i < 8; i++) {
-        printf("Test %x: SW = 0x%x, HW = 0x%x, Center = 0x%x\n",
+        printf("Test %x: SW = %x, HW = %x, Center = %x\n",
                i, software_results[i], hardware_results[i], test_windows[i][1][1]);
     }
+
+    uart_write_flush();
 
     printf("=== Done ===\n");
     return 0;
