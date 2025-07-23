@@ -43,7 +43,7 @@ package user_pkg;
   // Address rules given to address decoder
   // UserError does not appear as it will be used as default rule
   localparam croc_pkg::addr_map_rule_t [NumDemuxSbrRules-1:0] user_addr_map = '{
-    '{ idx:UserEdgeDetect, start_addr: UserEdgeDetectAddrOffset, end_addr: UserEdgeDetectAddrOffset + UserEdgeDetectAddrRange}
+    '{ idx:UserEdgeDetect, start_addr: UserEdgeDetectAddrOffset, end_addr: UserEdgeDetectAddrOffset + UserEdgeDetectAddrRange},
     '{ idx:UserRom, start_addr: UserRomAddrOffset, end_addr: UserRomAddrOffset + UserRomAddrRange}
   };
 
