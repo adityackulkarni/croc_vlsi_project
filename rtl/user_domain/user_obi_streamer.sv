@@ -22,8 +22,8 @@ module user_obi_streamer #(
   input logic [ObiCfg.DataWidth-1:0] wdata_i,   // if (mode == WRITE) then write wdata_i to SRAM0 via OBI, else this is zero
 
   /// Output to the Compute Module
-  output logic [ObiCfg.DataWidth-1:0] rpixels,  // 32 bits of 4 pixels passed to compute module
-  output logic is_valid,                        // valid signal to make sure compute module performs computation on valid data
+  output logic [ObiCfg.DataWidth-1:0] rpixels_o,  // 32 bits of 4 pixels passed to compute module
+  output logic is_valid_o,                        // valid signal to make sure compute module performs computation on valid data
 
   /// OBI response interface
   input  obi_rsp_t obi_rsp_i,
@@ -119,13 +119,13 @@ assign obi_req_o.req     = (state_q == ADDR_PHASE);
 
 assign obi_req_o.a.addr  = req_addr_q;
 assign obi_req_o.a.we    = req_we_q;
-assign obi_req_o.a.be    = '1; // Full word access
+assign obi_req_o.a.be    = 4b'1111; // Full word access
 assign obi_req_o.a.wdata = req_data_q;
 assign obi_req_o.a.aid   = '0; // Unused
 
 /// COMPUTE MODULE OUTPUTS ///
-assign rpixels  = rdata_q;
-assign is_valid = (state_q == RESP_PHASE) && rvalid_q;
+assign rpixels_o  = rdata_q;
+assign is_valid_o = (state_q == RESP_PHASE) && rvalid_q;
 
 
 
