@@ -58,12 +58,12 @@ module user_edge_detect #(
 
   // TODO 2: Build wdata_cnt, which counts the number of bits set in the previous request's data.
   
-  always_comb 
-  begin 
-    wdata_cnt = 0; 
-    for (int i = 0; i < 32 ; i++ ) 
-      if(wdata_q[i]) wdata_cnt += 1;  
-  end
+  // always_comb 
+  // begin 
+    // wdata_cnt = 0; 
+    // for (int i = 0; i < 32 ; i++ ) 
+      // if(wdata_q[i]) wdata_cnt += 1;  
+  // end
 
   // Assign the response data
   logic [1:0] word_addr;
@@ -77,13 +77,13 @@ module user_edge_detect #(
 
     if(req_q) begin
       case(word_addr)
-        3'h0: begin
-          if(we_q) begin
-            set_bits_accumulator_d = '0;
-          end else begin
-            rsp_err = '1;
-          end
-        end
+        // 3'h0: begin
+          // if(we_q) begin
+            // set_bits_accumulator_d = '0;
+          // end else begin
+            // rsp_err = '1;
+          // end
+        // end
         3'h1: begin
           if(we_q) begin
             set_bits_accumulator_d = set_bits_accumulator_q + wdata_cnt;
