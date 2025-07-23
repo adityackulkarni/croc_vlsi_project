@@ -4,11 +4,12 @@
 
 module user_top_module #(
   parameter obi_pkg::obi_cfg_t ObiCfg      = obi_pkg::ObiDefaultConfig,
+  parameter obi_pkg::obi_cfg_t ObiCfgStreamer = obi_pkg::ObiDefaultConfig,
   parameter type               sbr_obi_req_t   = logic,
   parameter type               sbr_obi_rsp_t   = logic,
 
   parameter type               mgr_obi_rsp_t   = logic,
-  parameter type               mgr_obi_req_t   = logic,
+  parameter type               mgr_obi_req_t   = logic
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -125,7 +126,7 @@ assign is_req   = (state_q == COMPUTE);
 assign is_write = 1'b1; // if always write back after compute
 
 user_obi_streamer #(
-  .ObiCfg(MgrObiCfg),
+  .ObiCfg(ObiCfgStreamer),
   .obi_req_t(mgr_obi_req_t),
   .obi_rsp_t(mgr_obi_rsp_t)
 ) u_streamer (
@@ -135,16 +136,16 @@ user_obi_streamer #(
   .is_write_i(is_write),
   .rw_addr_i(current_addr_q),
   .wdata_i(thresholded_pixels),
-  .rpixels(rpixels),
-  .is_valid(is_valid_from_streamer),
+  .rpixels_o(rpixels),
+  .is_valid_o(is_valid_from_streamer),
   .obi_rsp_i(obi_mgr_rsp_i),
   .obi_req_o(obi_mgr_req_o)
 );
 
 user_compute_module u_compute (
-  .rpixels(rpixels),
-  .is_valid(is_valid_from_streamer),
-  .threshold(threshold_q[7:0]),
+  .rpixels_i(rpixels),
+  .is_valid_i(is_valid_from_streamer),
+  .threshold_i(threshold_q[7:0]),
   .wdata_o(thresholded_pixels)
 );
 
@@ -160,7 +161,6 @@ always_comb begin
     case (addr_q[5:2])
       3'h0: rsp_data = current_addr_q;
       3'h1: rsp_data = {24'b0, threshold_q[7:0]};
-      3'h2: rsp_data = 32'hDEADBEEF;
       3'h3: rsp_data = img_size_q;
       3'h4: rsp_data = {31'b0, done_q};
       default: rsp_data = 32'hDEADBEEF;

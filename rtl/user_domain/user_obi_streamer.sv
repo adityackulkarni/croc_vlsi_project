@@ -119,7 +119,7 @@ assign obi_req_o.req     = (state_q == ADDR_PHASE);
 
 assign obi_req_o.a.addr  = req_addr_q;
 assign obi_req_o.a.we    = req_we_q;
-assign obi_req_o.a.be    = 4b'1111; // Full word access
+assign obi_req_o.a.be    = 4'b1111; // Full word access
 assign obi_req_o.a.wdata = req_data_q;
 assign obi_req_o.a.aid   = '0; // Unused
 

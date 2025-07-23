@@ -126,6 +126,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
 
     user_top_module #(
     .ObiCfg(SbrObiCfg),
+    .ObiCfgStreamer(MgrObiCfg),
     .sbr_obi_req_t(sbr_obi_req_t),
     .sbr_obi_rsp_t(sbr_obi_rsp_t),
     .mgr_obi_rsp_t(mgr_obi_rsp_t),
