@@ -4,11 +4,12 @@
 
 module user_top_module #(
   parameter obi_pkg::obi_cfg_t ObiCfg      = obi_pkg::ObiDefaultConfig,
+  parameter obi_pkg::obi_cfg_t ObiCfgStreamer = obi_pkg::ObiDefaultConfig,
   parameter type               sbr_obi_req_t   = logic,
   parameter type               sbr_obi_rsp_t   = logic,
 
   parameter type               mgr_obi_rsp_t   = logic,
-  parameter type               mgr_obi_req_t   = logic,
+  parameter type               mgr_obi_req_t   = logic
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -57,7 +58,16 @@ logic done_q, done_d;
 `FF(current_addr_q, current_addr_d, '0);
 `FF(img_size_q, img_size_d, '0);
 `FF(pixel_count_q, pixel_count_d, '0);
-`FF(done_q, done_d, 1'b0);
+`FF(done_q, done_d, '0);
+
+// Module interfacing
+logic [31:0] rpixels;
+logic is_valid_from_streamer;
+logic [31:0] thresholded_pixels;
+logic is_req, is_write;
+
+assign is_req   = (state_q == READ || state_q == WRITE);
+assign is_write = (state_q == WRITE);
 
 // MMIO write logic + FSM triggers
 always_comb begin
@@ -115,17 +125,9 @@ always_comb begin
   endcase
 end
 
-// Module interfacing
-logic [31:0] rpixels;
-logic is_valid_from_streamer;
-logic [31:0] thresholded_pixels;
-logic is_req, is_write;
-
-assign is_req   = (state_q == READ || state_q == WRITE);
-assign is_write = (state_q == WRITE);
 
 user_obi_streamer #(
-  .ObiCfg(MgrObiCfg),
+  .ObiCfg(ObiCfgStreamer),
   .obi_req_t(mgr_obi_req_t),
   .obi_rsp_t(mgr_obi_rsp_t)
 ) u_streamer (
@@ -135,16 +137,16 @@ user_obi_streamer #(
   .is_write_i(is_write),
   .rw_addr_i(current_addr_q),
   .wdata_i(thresholded_pixels),
-  .rpixels(rpixels),
-  .is_valid(is_valid_from_streamer),
+  .rpixels_o(rpixels),
+  .is_valid_o(is_valid_from_streamer),
   .obi_rsp_i(obi_mgr_rsp_i),
   .obi_req_o(obi_mgr_req_o)
 );
 
 user_compute_module u_compute (
-  .rpixels(rpixels),
-  .is_valid(is_valid_from_streamer),
-  .threshold(threshold_q[7:0]),
+  .rpixels_i(rpixels),
+  .is_valid_i(is_valid_from_streamer),
+  .threshold_i(threshold_q[7:0]),
   .wdata_o(thresholded_pixels)
 );
 
@@ -160,7 +162,6 @@ always_comb begin
     case (addr_q[5:2])
       3'h0: rsp_data = current_addr_q;
       3'h1: rsp_data = {24'b0, threshold_q[7:0]};
-      3'h2: rsp_data = 32'hDEADBEEF;
       3'h3: rsp_data = img_size_q;
       3'h4: rsp_data = {31'b0, done_q};
       default: rsp_data = 32'hDEADBEEF;
