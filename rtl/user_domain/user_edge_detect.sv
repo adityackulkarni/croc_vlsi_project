@@ -1,116 +1,80 @@
-// Copyright 2023 ETH Zurich and University of Bologna.
-// Solderpad Hardware License, Version 0.51, see LICENSE for details.
-// SPDX-License-Identifier: SHL-0.51
-
-// gives us the `FF(...) macro making it easy to have properly defined flip-flops
-`include "common_cells/registers.svh"
-
-// simple ROM
 module user_edge_detect #(
-  /// The OBI configuration for all ports.
-  parameter obi_pkg::obi_cfg_t           ObiCfg      = obi_pkg::ObiDefaultConfig,
-  /// The request struct.
-  parameter type                         obi_req_t   = logic,
-  /// The response struct.
-  parameter type                         obi_rsp_t   = logic
+  parameter obi_pkg::obi_cfg_t ObiCfg = obi_pkg::ObiDefaultConfig,
+  parameter type obi_req_t = logic,
+  parameter type obi_rsp_t = logic
 ) (
-  /// Clock
-  input  logic clk_i,
-  /// Active-low reset
-  input  logic rst_ni,
-
-  /// OBI request interface
+  input  logic    clk_i,
+  input  logic    rst_ni,
   input  obi_req_t obi_req_i,
-  /// OBI response interface
   output obi_rsp_t obi_rsp_o
 );
 
+  // Request pipeline registers
+  logic        req_q, req_qq;
+  logic        we_q, we_qq;
+  logic [3:0]  addr_q, addr_qq;  // Extended to [3:0] for proper decoding
+  logic [15:0] set_bits_accumulator;
 
-  // Define some registers to hold the requests fields
-  logic req_d, req_q;
-  logic we_d, we_q;
-  logic [ObiCfg.AddrWidth-1:0] addr_d, addr_q;
-  logic [ObiCfg.IdWidth-1:0] id_d, id_q;
-  logic [ObiCfg.DataWidth-1:0] wdata_d, wdata_q;
-
-  // Signals used to create the response
-  logic [ObiCfg.DataWidth-1:0] rsp_data; // Data field of the obi response
-  logic rsp_err; // Error field of the obi response
-
-  // Internal signals/registers
-  logic [15:0] set_bits_accumulator_d, set_bits_accumulator_q; // Holding the accumulated bitcount
-  logic [15:0] wdata_cnt; // Olding the bitcount of the request wdata
-  
-  // Note to avoid writing trivial always_ff statements we can use this macro defined in registers.svh 
-  `FF(req_q, req_d, '0);
-  `FF(id_q , id_d , '0);
-  `FF(we_q , we_d , '0);
-  `FF(wdata_q , wdata_d , '0);
-  `FF(addr_q , addr_d , '0);
-  `FF(set_bits_accumulator_q, set_bits_accumulator_d, '0);
-
-  assign req_d = obi_req_i.req;
-  assign id_d = obi_req_i.a.aid;
-  assign we_d = obi_req_i.a.we;
-  assign addr_d = obi_req_i.a.addr;
-  assign wdata_d = obi_req_i.a.wdata;
-
-
-  // TODO 2: Build wdata_cnt, which counts the number of bits set in the previous request's data.
-  
-  always_comb 
-  begin 
-    wdata_cnt = 0; 
-    for (int i = 0; i < 32 ; i++ ) 
-      if(wdata_q[i]) wdata_cnt += 1;  
+  // Bit counter
+  logic [15:0] wdata_cnt;
+  always_comb begin
+    wdata_cnt = '0;
+    for (int i = 0; i < 32; i++)
+      wdata_cnt += obi_req_i.a.wdata[i];
   end
 
-  // Assign the response data
-  logic [1:0] word_addr;
-  always_comb begin
-    rsp_data = '0;
-    rsp_err  = '0;
-    word_addr = addr_q[3:2];
-    set_bits_accumulator_d = set_bits_accumulator_q;
+  // OBI Response Logic
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      set_bits_accumulator <= '0;
+      req_q  <= '0; req_qq  <= '0;
+      we_q   <= '0; we_qq   <= '0;
+      addr_q <= '0; addr_qq <= '0;
+    end else begin
+      // Pipeline stages for OBI protocol
+      req_q  <= obi_req_i.req;
+      req_qq <= req_q;
+      
+      we_q   <= obi_req_i.a.we;
+      we_qq  <= we_q;
+      
+      addr_q <= obi_req_i.a.addr[3:0];
+      addr_qq <= addr_q;
 
-    // TODO 1: A write request at address 0x0 will set the accumulator to zero
-
-    if(req_q) begin
-      case(word_addr)
-        3'h0: begin
-          if(we_q) begin
-            set_bits_accumulator_d = '0;
-          end else begin
-            rsp_err = '1;
-          end
-        end
-        3'h1: begin
-          if(we_q) begin
-            set_bits_accumulator_d = set_bits_accumulator_q + wdata_cnt;
-          end else begin
-            rsp_err = '1;
-          end
-        end
-        3'h2: begin
-          if(we_q) begin
-            rsp_err = '1;
-          end else begin
-            rsp_data = set_bits_accumulator_q;
-          end
-        end
-        default: rsp_data = 32'hffffffff;
-      endcase
+      // Accumulator update
+      if (req_q && we_q) begin
+        case (addr_q[3:2])
+          2'h0: set_bits_accumulator <= '0;           // Reset on write to 0x0
+          2'h1: set_bits_accumulator <= set_bits_accumulator + wdata_cnt; // Accumulate on write to 0x4
+          default: ; // No action
+        endcase
+      end
     end
   end
 
-  // Wire the response
-  // A channel
-  assign obi_rsp_o.gnt = obi_req_i.req;
-  // R channel:
-  assign obi_rsp_o.rvalid = req_q;
-  assign obi_rsp_o.r.rdata = rsp_data;
-  assign obi_rsp_o.r.rid = id_q;
-  assign obi_rsp_o.r.err = rsp_err;
-  assign obi_rsp_o.r.r_optional = '0;
+  // Response generation
+  always_comb begin
+    obi_rsp_o.gnt = 1'b1;  // Always ready to accept requests
+    
+    obi_rsp_o.rvalid = req_qq;
+    obi_rsp_o.r.rid  = '0;
+    obi_rsp_o.r.r_optional = '0;
+    
+    if (req_qq) begin
+      case (addr_qq[3:2])
+        2'h2: begin  // Read from 0x8
+          obi_rsp_o.r.rdata = {16'h0, set_bits_accumulator};
+          obi_rsp_o.r.err = 1'b0;
+        end
+        default: begin
+          obi_rsp_o.r.rdata = 32'hdeadbeef;
+          obi_rsp_o.r.err = !we_qq; // Error on invalid reads
+        end
+      endcase
+    end else begin
+      obi_rsp_o.r.rdata = '0;
+      obi_rsp_o.r.err = '0;
+    end
+  end
 
 endmodule
