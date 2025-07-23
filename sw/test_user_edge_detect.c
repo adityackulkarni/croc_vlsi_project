@@ -10,8 +10,8 @@
 #include "gpio.h"
 #include "util.h"
 
-#define TB_FREQUENCY 10000000
-#define TB_BAUDRATE    115200
+#define TB_FREQUENCY 20000000
+#define TB_BAUDRATE    125000
 
 unsigned int count_set_bits(unsigned int n)
 {
@@ -46,22 +46,33 @@ int main() {
 
     uint32_t t0, t1, t2, t3;
     uint32_t array[8] = {0x7bdf967f, 0xa6c04951, 0x3f78fb58, 0x4d6a542b, 0x9f7898b2, 0x2d9e72ad, 0x1f4fcbde};
-
+    printf("Array: %x\n", array);
     asm volatile("csrr %0, mcycle" : "=r"(t0)::"memory");
 
     uint32_t result_a = 0;
+    printf("result_a: %x\n", result_a);
     result_a += count_set_bits(array[0]);
+    printf("result_a: %x\n", result_a);
     result_a += count_set_bits(array[1]);
+    printf("result_a: %x\n", result_a);
     result_a += count_set_bits(array[2]);
+    printf("result_a: %x\n", result_a);
     result_a += count_set_bits(array[3]);
+    printf("result_a: %x\n", result_a);
     result_a += count_set_bits(array[4]);
+    printf("result_a: %x\n", result_a);
     result_a += count_set_bits(array[5]);
+    printf("result_a: %x\n", result_a);
     result_a += count_set_bits(array[6]);
+    printf("result_a: %x\n", result_a);
     result_a += count_set_bits(array[7]);
+    printf("result_a: %x\n", result_a);
 
     asm volatile("csrr %0, mcycle" : "=r"(t1)::"memory");
 
-    for(volatile int i = 0; i < 128; i++) {}
+    for(volatile int i = 0; i < 128; i++) {
+        printf("i: %x\n", i);
+    }
 
     asm volatile("csrr %0, mcycle" : "=r"(t2)::"memory");
     
@@ -70,10 +81,13 @@ int main() {
 
     // Accumulate
     for(int i = 0; i < 8; i++) {
+        printf("i: %x\n", i);
         *reg32(USER_SETBITCOUNT_BASE_ADDR, 0x4) = array[i];
     }
+    printf("Array: %x\n", array);
     // Read result
     uint32_t result_b = *reg32(USER_SETBITCOUNT_BASE_ADDR, 0x8);
+    printf("result_b: %x\n", result_b);
 
     asm volatile("csrr %0, mcycle" : "=r"(t3)::"memory");
 
