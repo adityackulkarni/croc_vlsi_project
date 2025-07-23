@@ -2,67 +2,78 @@
 #include "/lib/inc/print.h"
 #include "/lib/inc/timer.h"
 #include "/lib/inc/mem.h"
+#include "image_data.h" // defines `image_data` and `IMAGE_SIZE`
 
 #define IMG_BASE_ADDR    0x10000000  // SRAM0 base
 #define ACC_BASE_ADDR    0x20000000  // Accelerator MMIO base
 
-#define MMIO_ADDR        (*(volatile uint32_t*)(ACC_BASE_ADDR + 0x00))
-#define MMIO_THRESH      (*(volatile uint32_t*)(ACC_BASE_ADDR + 0x04))
-#define MMIO_START       (*(volatile uint32_t*)(ACC_BASE_ADDR + 0x08))
-#define MMIO_IMG_SIZE    (*(volatile uint32_t*)(ACC_BASE_ADDR + 0x0C))
+#define REG_CURRENT_ADDR (ACC_BASE_ADDR + 0x00)
+#define REG_THRESHOLD    (ACC_BASE_ADDR + 0x04)
+#define REG_START        (ACC_BASE_ADDR + 0x08)
+#define REG_IMG_SIZE     (ACC_BASE_ADDR + 0x0C)
+#define REG_DONE         (ACC_BASE_ADDR + 0x10)  
 
-#define IMG_WIDTH        28
-#define IMG_HEIGHT       28
-#define IMG_PIXELS       (IMG_WIDTH * IMG_HEIGHT)
-#define IMG_WORDS        (IMG_PIXELS / 4)
-
-void write_test_image() {
-    for (int i = 0; i < IMG_WORDS; ++i) {
-        // Each word holds 4 pixels
-        // We'll pack values: 50, 100, 150, 200 repeatedly
-        uint8_t p1 = 50;
-        uint8_t p2 = 100;
-        uint8_t p3 = 150;
-        uint8_t p4 = 200;
-        uint32_t packed = (p4 << 24) | (p3 << 16) | (p2 << 8) | p1;
-        ((volatile uint32_t*)IMG_BASE_ADDR)[i] = packed;
-    }
-}
-
-void print_thresholded_image() {
-    for (int i = 0; i < 8; ++i) {
-        uint32_t word = ((volatile uint32_t*)IMG_BASE_ADDR)[i];
-        uint8_t p1 = (word >> 0) & 0xFF;
-        uint8_t p2 = (word >> 8) & 0xFF;
-        uint8_t p3 = (word >> 16) & 0xFF;
-        uint8_t p4 = (word >> 24) & 0xFF;
-        printf("Word %d: %d %d %d %d\n", i, p1, p2, p3, p4);
-    }
-}
+// Threshold value to be applied
+#define THRESHOLD 127
 
 int main() {
     uart_init();
-    printf("=== Thresholding Accelerator Test ===\n");
+    timer_init();
 
-    // 1. Write test image to SRAM0
-    printf("Writing test image to SRAM...\n");
-    write_test_image();
+    printf("== Thresholding Comparison ==\n");
 
-    // 2. Configure MMIO
-    printf("Configuring accelerator...\n");
-    MMIO_ADDR     = IMG_BASE_ADDR;   // Address (word aligned)
-    MMIO_THRESH   = 100;             // Threshold value
-    MMIO_IMG_SIZE = IMG_PIXELS;      // Total pixels
+    volatile uint8_t *img_mem = (uint8_t *) IMG_BASE_ADDR;
 
-    // 3. Start computation
-    MMIO_START = 1;
+    // 1. Copy image to SRAM
+    for (int i = 0; i < IMAGE_SIZE; i++) {
+        img_mem[i] = image_data[i];
+    }
 
-    // 4. Wait (FIX THIS if you add a real "done" register)
-    sleep_ms(10);
+    // 2. Software thresholding
+    uint32_t t0 = timer_time_us();
+    for (int i = 0; i < IMAGE_SIZE; i++) {
+        img_mem[i] = (image_data[i] > THRESHOLD) ? 255 : 0;
+    }
+    uint32_t t1 = timer_time_us();
 
-    // 5. Read back results
-    printf("Result after thresholding:\n");
-    print_thresholded_image();
+    // 3. Copy original image again (for hardware to use)
+    for (int i = 0; i < IMAGE_SIZE; i++) {
+        img_mem[i] = image_data[i];
+    }
+
+    // 4. Configure accelerator
+    *reg32(REG_CURRENT_ADDR) = (uint32_t) IMG_BASE_ADDR;
+    *reg32(REG_IMG_SIZE)     = IMAGE_SIZE;
+    *reg32(REG_THRESHOLD)    = THRESHOLD;
+    *reg32(REG_START)        = 1; // start FSM
+
+    uint32_t t2 = timer_time_us();
+    // 5. Wait for accelerator to finish
+    while ((*reg32(REG_DONE) & 0x1) == 0) {}
+
+    uint32_t t3 = timer_time_us();
+
+    // 6. Print results
+    printf("Software done in %d us\n", t1 - t0);
+    printf("Hardware done in %d us\n", t3 - t2);
+
+    // 7. Validate result (optional)
+    int errors = 0;
+    for (int i = 0; i < IMAGE_SIZE; i++) {
+        uint8_t expected = (image_data[i] > THRESHOLD) ? 255 : 0;
+        if (img_mem[i] != expected) {
+            errors++;
+            if (errors <= 10) {
+                printf("Mismatch at [%d]: got %d, expected %d\n", i, img_mem[i], expected);
+            }
+        }
+    }
+
+    if (errors == 0) {
+        printf("✅ Accelerator output is correct!\n");
+    } else {
+        printf("❌ Accelerator output mismatch: %d errors\n", errors);
+    }
 
     uart_write_flush();
     return 0;
