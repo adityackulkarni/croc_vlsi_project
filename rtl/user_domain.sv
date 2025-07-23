@@ -144,11 +144,11 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
 
   // TODO 4: instanciate user_edge_detect
   // User SetBitAcc 
-  user_setbitacc #( 
+  user_edge_detect #( 
     .ObiCfg      ( SbrObiCfg ), 
     .obi_req_t   ( sbr_obi_req_t ), 
     .obi_rsp_t   ( sbr_obi_rsp_t )  
-  ) i_user_rom ( 
+  ) i_user_edge_detect ( 
     .clk_i, 
     .rst_ni, 
     .obi_req_i  ( user_bit_acc_obi_req ), 
