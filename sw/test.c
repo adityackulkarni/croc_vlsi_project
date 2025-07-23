@@ -1,7 +1,6 @@
-#include "/lib/inc/uart.h"
-#include "/lib/inc/print.h"
-#include "/lib/inc/timer.h"
-#include "/lib/inc/mem.h"
+#include "lib/inc/uart.h"
+#include "lib/inc/print.h"
+#include "lib/inc/timer.h"
 #include "image_data.h" // defines `image_data` and `IMAGE_SIZE`
 
 #define IMG_BASE_ADDR    0x10000000  // SRAM0 base
