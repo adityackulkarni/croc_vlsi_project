@@ -72,8 +72,8 @@ module user_rom #(
     rsp_err  = '0;
     word_addr = addr_q[3:2];
 
-    if(req_q) begin
-      if(~we_q) begin
+    if(req_q2) begin
+      if(~we_q2) begin
         case(word_addr)
           2'h0: rsp_data = 32'h01;
           2'h1: rsp_data = 32'h02;
@@ -91,9 +91,9 @@ module user_rom #(
   // A channel
   assign obi_rsp_o.gnt = obi_req_i.req;
   // R channel:
-  assign obi_rsp_o.rvalid = req_q;
+  assign obi_rsp_o.rvalid = req_q2;
   assign obi_rsp_o.r.rdata = rsp_data;
-  assign obi_rsp_o.r.rid = id_q;
+  assign obi_rsp_o.r.rid = id_q2;
   assign obi_rsp_o.r.err = rsp_err;
   assign obi_rsp_o.r.r_optional = '0;
 
