@@ -39,9 +39,13 @@ assign addr_d   = obi_sbr_req_i.a.addr;
 assign wdata_d  = obi_sbr_req_i.a.wdata;
 
 // FSM States
-typedef enum logic [2:0] {
-  IDLE, READ, COMPUTE, WRITE, WAIT_RESP, DONE
+typedef enum logic [1:0] {
+  IDLE,        // Wait for MMIO trigger
+  COMPUTE,     // Streamer is busy doing a batch
+  REPEAT,      // Wait for valid, update counters
+  DONE         // All done
 } state_t;
+
 
 state_t state_q, state_d;
 `FF(state_q, state_d, IDLE);
@@ -59,6 +63,12 @@ logic done_q, done_d;
 `FF(pixel_count_q, pixel_count_d, '0);
 `FF(done_q, done_d, 1'b0);
 
+// Module interfacing
+logic [31:0] rpixels;
+logic is_valid_from_streamer;
+logic [31:0] thresholded_pixels;
+logic is_req, is_write;
+
 // MMIO write logic + FSM triggers
 always_comb begin
   threshold_d     = threshold_q;
@@ -75,54 +85,44 @@ always_comb begin
       3'h2: if (wdata_q[0]) begin
         pixel_count_d = '0;
         done_d        = 1'b0;
-        state_d       = READ;
+        state_d       = COMPUTE;
       end
       3'h3: img_size_d = wdata_q;
       default: ;
     endcase
   end
 
+
   case (state_q)
-    READ: begin
-      if (!obi_streamer_busy) begin
-        state_d = COMPUTE;
-      end
+    IDLE: begin
+      state_d = state_q;
     end
+
     COMPUTE: begin
       if (is_valid_from_streamer) begin
-        state_d = WRITE;
-      end
-    end
-    WRITE: begin
-      if (!obi_streamer_busy) begin
-        state_d = WAIT_RESP;
-      end
-    end
-    WAIT_RESP: begin
-      if (is_valid_from_streamer) begin
+        // streamer finished this transaction
         if (pixel_count_q + 4 >= img_size_q) begin
           done_d = 1'b1;
           state_d = DONE;
         end else begin
           pixel_count_d   = pixel_count_q + 4;
-          current_addr_d  = current_addr_q + 1; // word address increment
-          state_d = READ;
+          current_addr_d  = current_addr_q + 1;
+          state_d = COMPUTE; // loop again
         end
+      end else begin
+        state_d = state_q; // stay until streamer finishes
       end
     end
+
     DONE: state_d = DONE;
     default: state_d = IDLE;
   endcase
+
 end
 
-// Module interfacing
-logic [31:0] rpixels;
-logic is_valid_from_streamer;
-logic [31:0] thresholded_pixels;
-logic is_req, is_write;
 
-assign is_req   = (state_q == READ || state_q == WRITE);
-assign is_write = (state_q == WRITE);
+assign is_req   = (state_q == COMPUTE);
+assign is_write = 1'b1; // if always write back after compute
 
 user_obi_streamer #(
   .ObiCfg(MgrObiCfg),
