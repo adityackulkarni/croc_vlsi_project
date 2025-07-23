@@ -160,8 +160,9 @@ always_comb begin
     case (addr_q[5:2])
       3'h0: rsp_data = current_addr_q;
       3'h1: rsp_data = {24'b0, threshold_q[7:0]};
-      3'h2: rsp_data = {31'b0, done_q};
+      3'h2: rsp_data = 32'hDEADBEEF;
       3'h3: rsp_data = img_size_q;
+      3'h4: rsp_data = {31'b0, done_q};
       default: rsp_data = 32'hDEADBEEF;
     endcase
   end
