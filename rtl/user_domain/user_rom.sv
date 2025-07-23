@@ -1,82 +1,100 @@
+// Copyright 2023 ETH Zurich and University of Bologna.
+// Solderpad Hardware License, Version 0.51, see LICENSE for details.
+// SPDX-License-Identifier: SHL-0.51
+
+// gives us the `FF(...) macro making it easy to have properly defined flip-flops
 `include "common_cells/registers.svh"
 
+// simple ROM
 module user_rom #(
-  parameter obi_pkg::obi_cfg_t ObiCfg = obi_pkg::ObiDefaultConfig,
-  parameter type obi_req_t = logic,
-  parameter type obi_rsp_t = logic,
-  parameter int IMG_WIDTH = 16,  // Reduced from 64 to 16
-  parameter int IMG_HEIGHT = 16  // Reduced from 64 to 16
+  /// The OBI configuration for all ports.
+  parameter obi_pkg::obi_cfg_t           ObiCfg      = obi_pkg::ObiDefaultConfig,
+  /// The request struct.
+  parameter type                         obi_req_t   = logic,
+  /// The response struct.
+  parameter type                         obi_rsp_t   = logic
 ) (
-  input  logic    clk_i,
-  input  logic    rst_ni,
-  
-  // OBI Interface
-  input  obi_req_t obi_req_i,
-  output obi_rsp_t obi_rsp_o,
+  /// Clock
+  input  logic clk_i,
+  /// Active-low reset
+  input  logic rst_ni,
 
-  // Accelerator Interface
-  input  logic        accel_req_i,
-  input  logic [31:0] accel_addr_i,
-  output logic [7:0]  accel_data_o,
-  output logic        accel_valid_o
+  /// OBI request interface
+  input  obi_req_t obi_req_i,
+  /// OBI response interface
+  output obi_rsp_t obi_rsp_o
 );
 
-  // ---------------------------------------------------------------------------
-  // ROM Storage (16x16 image = 256 bytes)
-  // ---------------------------------------------------------------------------
-  localparam DEPTH = IMG_WIDTH * IMG_HEIGHT;
-  logic [7:0] image_ram [0:DEPTH-1];
+  // Define some registers to hold the requests fields
+  logic req_d, req_q, req_q2; // Request valid
+  logic we_d, we_q, we_q2; // Write enable
+  logic [ObiCfg.AddrWidth-1:0] addr_d, addr_q, addr_q2; // Internal address of the word to read
+  logic [ObiCfg.IdWidth-1:0] id_d, id_q, id_q2; // Id of the request, must be same for the response
 
-  // Initialize with test pattern (similar to exercise style)
-  initial begin
-    for (int i = 0; i < DEPTH; i++) begin
-      image_ram[i] = i % 16;  // Reduced pattern range
+  // Signals used to create the response
+  logic [ObiCfg.DataWidth-1:0] rsp_data; // Data field of the obi response
+  logic rsp_err; // Error field of the obi response
+
+  // Wire the registers holding the request
+  // TODO 1 : Modify the code such that the ROM will respond after 2 cycles instead of 1
+  assign req_d = obi_req_i.req;
+  assign id_d = obi_req_i.a.aid;
+  assign we_d = obi_req_i.a.we;
+  assign addr_d = obi_req_i.a.addr;
+  always_ff @(posedge (clk_i) or negedge (rst_ni)) begin
+    if (!rst_ni) begin
+      req_q <= '0;
+      id_q <= '0;
+      we_q <= '0;
+      addr_q <= '0;
+      req_q2 <= '0;
+      id_q2 <= '0;
+      we_q2 <= '0;
+      addr_q2 <= '0;
+    end else begin
+      req_q <= req_d;
+      id_q <= id_d;
+      we_q <= we_d;
+      addr_q <= addr_d;
+      req_q2 <= req_q;
+      id_q2 <= id_q;
+      we_q2 <= we_q;
+      addr_q2 <= addr_q;
     end
   end
 
-  // ---------------------------------------------------------------------------
-  // OBI Interface (2-cycle latency like exercise)
-  // ---------------------------------------------------------------------------
-  logic req_q, req_qq;
-  logic [ObiCfg.AddrWidth-1:0] addr_q, addr_qq;
-  logic [ObiCfg.IdWidth-1:0] id_q, id_qq;
-  logic we_q, we_qq;
-
-  // First pipeline stage (like user_rom.sv)
-  `FF(req_q, obi_req_i.req, '0);
-  `FF(id_q, obi_req_i.a.aid, '0);
-  `FF(we_q, obi_req_i.a.we, '0);
-  `FF(addr_q, obi_req_i.a.addr, '0);
-
-  // Second pipeline stage (for 2-cycle latency)
-  `FF(req_qq, req_q, '0);
-  `FF(id_qq, id_q, '0);
-  `FF(we_qq, we_q, '0);
-  `FF(addr_qq, addr_q, '0);
-
-  // OBI Response (similar to exercise)
-  logic [31:0] rsp_data;
+  // Assign the response data
+  // TODO 2 : Modify the code such that the ROM will contain (up to) 32 ASCII chars
+  // hold in your initials in the form: "JD&JD's ASIC\0"
+  logic [1:0] word_addr;
   always_comb begin
     rsp_data = '0;
-    if (req_qq && ~we_qq) begin
-      rsp_data = {24'h0, image_ram[addr_qq]}; // Byte access
+    rsp_err  = '0;
+    word_addr = addr_q[3:2];
+
+    if(req_q) begin
+      if(~we_q) begin
+        case(word_addr)
+          2'h0: rsp_data = 32'h01;
+          2'h1: rsp_data = 32'h02;
+          2'h2: rsp_data = 32'h03;
+          2'h3: rsp_data = 32'h04;
+          default: rsp_data = 32'h0;
+        endcase
+      end else begin
+        rsp_err = '1;
+      end
     end
   end
 
+  // Wire the response
+  // A channel
   assign obi_rsp_o.gnt = obi_req_i.req;
-  assign obi_rsp_o.rvalid = req_qq;
+  // R channel:
+  assign obi_rsp_o.rvalid = req_q;
   assign obi_rsp_o.r.rdata = rsp_data;
-  assign obi_rsp_o.r.rid = id_qq;
-  assign obi_rsp_o.r.err = we_qq;
+  assign obi_rsp_o.r.rid = id_q;
+  assign obi_rsp_o.r.err = rsp_err;
   assign obi_rsp_o.r.r_optional = '0;
-
-  // ---------------------------------------------------------------------------
-  // Accelerator Interface (similar to setbitacc)
-  // ---------------------------------------------------------------------------
-  logic [7:0] accel_data_q;
-  logic accel_valid_q;
-
-  `FF(accel_data_o, accel_req_i ? image_ram[accel_addr_i] : '0, '0);
-  `FF(accel_valid_o, accel_req_i, '0);
 
 endmodule

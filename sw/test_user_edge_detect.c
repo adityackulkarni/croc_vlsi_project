@@ -1,106 +1,84 @@
+// Copyright (c) 2024 ETH Zurich and University of Bologna.
+// Licensed under the Apache License, Version 2.0, see LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0/
+//
+// Authors:
+// - Philippe Sauter <phsauter@iis.ee.ethz.ch>
+
 #include "uart.h"
 #include "print.h"
 #include "gpio.h"
 #include "util.h"
 
-#define TB_FREQUENCY 20000000
-#define TB_BAUDRATE  115200
+#define TB_FREQUENCY 10000000
+#define TB_BAUDRATE    115200
 
-// Base address of edge detection accelerator (adjust accordingly)
-#define USER_EDGE_DETECT_BASE_ADDR 0x20001000
-
-// Offsets for accelerator registers
-#define EDGE_DETECT_PIXEL_OFFSET   0x00  // Write pixel value here
-#define EDGE_DETECT_RESULT_OFFSET  0x08  // Read edge detection result here
-#define EDGE_DETECT_STATUS_OFFSET  0x0C  // Read status: 1 = done, 0 = busy
-
-// 3x3 windows to test (8 windows)
-uint8_t windows[8][9] = {
-    {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x10, 0x80, 0x10, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x10, 0x80, 0x10, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x10, 0x40, 0x10, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x10, 0x90, 0x10, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x10, 0x90, 0x10, 0x00, 0x00, 0x00}
-};
-
-// Software Sobel
-uint8_t sobel_software(uint8_t *w) {
-    int gx = (-1)*w[0] + 0*w[1] + (1)*w[2]
-           + (-2)*w[3] + 0*w[4] + (2)*w[5]
-           + (-1)*w[6] + 0*w[7] + (1)*w[8];
-
-    int gy = (-1)*w[0] + (-2)*w[1] + (-1)*w[2]
-           + 0*w[3] + 0*w[4] + 0*w[5]
-           + (1)*w[6] + (2)*w[7] + (1)*w[8];
-
-    int abs_gx = gx < 0 ? -gx : gx;
-    int abs_gy = gy < 0 ? -gy : gy;
-    int g = abs_gx + abs_gy;
-
-    if (g > 255) g = 255;
-
-    return (uint8_t)g;
+unsigned int count_set_bits(unsigned int n)
+{
+    unsigned int count = 0;
+    while (n) {
+        count += n & 1;
+        n = n >> 1;
+    }
+    return count;
 }
 
 int main() {
     uart_init();
-    printf("Edge detection accelerator test\n");
+
+    printf("He%xo World!\n", 0x11);
+    uart_write_flush();
+    *reg8(GPIO_BASE_ADDR, GPIO_DIR_REG_OFFSET) = 0x0F; // lowest four as outputs
+    *reg8(GPIO_BASE_ADDR, GPIO_OUT_REG_OFFSET) = 0x0A; // ready output pattern
+    *reg8(GPIO_BASE_ADDR, GPIO_EN_REG_OFFSET)  = 0xFF;  // enable lowest eight
+    asm volatile (
+        "nop; nop; nop; nop; nop;"
+    ); // wait a few cycles to give GPIO signal time to propagate
+    printf("GPIO (expect 0xA0): %x\n", *reg8(GPIO_BASE_ADDR, GPIO_IN_REG_OFFSET));
+    *reg8(GPIO_BASE_ADDR, GPIO_TOGGLE_REG_OFFSET) = 0x0F;
+    asm volatile (
+        "nop; nop; nop; nop; nop;"
+    ); // wait a few cycles to give GPIO signal time to propagate
+    printf("GPIO (expect 0x50): %x\n", *reg8(GPIO_BASE_ADDR, GPIO_IN_REG_OFFSET));
+    uart_write_flush();
+
+    for(volatile int i = 0; i < 128; i++) {}
 
     uint32_t t0, t1, t2, t3;
-    uint8_t sw_results[8];
-    uint8_t hw_results[8];
+    uint32_t array[8] = {0x7bdf967f, 0xa6c04951, 0x3f78fb58, 0x4d6a542b, 0x9f7898b2, 0x2d9e72ad, 0x1f4fcbde};
 
-    // Software edge detection
-    printf("Running software Sobel...\n");
     asm volatile("csrr %0, mcycle" : "=r"(t0)::"memory");
-    for (int i = 0; i < 8; i++) {
-        sw_results[i] = sobel_software(windows[i]);
-    }
+
+    uint32_t result_a = 0;
+    result_a += count_set_bits(array[0]);
+    result_a += count_set_bits(array[1]);
+    result_a += count_set_bits(array[2]);
+    result_a += count_set_bits(array[3]);
+    result_a += count_set_bits(array[4]);
+    result_a += count_set_bits(array[5]);
+    result_a += count_set_bits(array[6]);
+    result_a += count_set_bits(array[7]);
+
     asm volatile("csrr %0, mcycle" : "=r"(t1)::"memory");
-    printf("Software completed.\n");
 
-    // Hardware edge detection
-    printf("Running hardware Sobel...\n");
+    for(volatile int i = 0; i < 128; i++) {}
+
     asm volatile("csrr %0, mcycle" : "=r"(t2)::"memory");
-    for (int i = 0; i < 8; i++) {
-        printf("Window %x: Writing pixels...\n", i);
-        // Write all 9 pixels to accelerator
-        for (int p = 0; p < 9; p++) {
-            printf("  Pixel %x = %x (0x%x)\n", p, windows[i][p], windows[i][p]);
-            *reg32(USER_EDGE_DETECT_BASE_ADDR, EDGE_DETECT_PIXEL_OFFSET) = windows[i][p];
-        }
+    
+    // Reset the accumulator
+    *reg32(USER_SETBITCOUNT_BASE_ADDR, 0x0) = 0x0;
 
-        printf("  Waiting for accelerator to finish...\n");
-        // Poll status
-        volatile uint32_t status = 0;
-        int timeout = 100000;
-        while ((status = *reg32(USER_EDGE_DETECT_BASE_ADDR, EDGE_DETECT_STATUS_OFFSET)) == 0 && timeout--);
-
-        if (timeout <= 0) {
-            printf("  ERROR: Accelerator timed out!\n");
-            hw_results[i] = 0xFF;
-            continue;
-        }
-
-        // Read result
-        hw_results[i] = *reg32(USER_EDGE_DETECT_BASE_ADDR, EDGE_DETECT_RESULT_OFFSET);
-        printf("  HW Result: %x (0x%x)\n", hw_results[i], hw_results[i]);
+    // Accumulate
+    for(int i = 0; i < 8; i++) {
+        *reg32(USER_SETBITCOUNT_BASE_ADDR, 0x4) = array[i];
     }
+    // Read result
+    uint32_t result_b = *reg32(USER_SETBITCOUNT_BASE_ADDR, 0x8);
+
     asm volatile("csrr %0, mcycle" : "=r"(t3)::"memory");
-    printf("Hardware completed.\n");
 
-    // Print summary
-    for (int i = 0; i < 8; i++) {
-        printf("Window %x: SW %x, HW %x\n",
-               i, sw_results[i], hw_results[i]);
-    }
-
-    printf("Software time: %x cycles\n", t1 - t0);
-    printf("Hardware time: %x cycles\n", t3 - t2);
-
+    printf("Result: software %x (%x cycles) , hardware %x (%x cycles)\n", result_a, t1-t0, result_b, t3-t2);
     uart_write_flush();
-    return 0;
+
+    return 1;
 }
