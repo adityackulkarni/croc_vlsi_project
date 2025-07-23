@@ -1,45 +1,36 @@
-// The idea is that this submodule is responsible only for computing Sobel kernels. Memory reads and writes are handles elsewhere.
-// gives us the `FF(...) macro making it easy to have properly defined flip-flops
-`include "common_cells/registers.svh"
+module user_compute_module (
+  input  logic [31:0] rpixels,      // Input: 4 packed 8-bit pixels
+  input  logic        is_valid,     // Input: valid signal from OBI streamer
+  input  logic [7:0]  threshold,    // Input: threshold value
 
-module edge_detection_module #(
-  /// Threshold parameter to return binary edge map if needed
-  parameter int THRESHOLD = 100
-)(
-  // Pixel inputs (signed 8-bit grayscale)
-  input  logic signed [7:0] p00, p01, p02,  // top row
-  input  logic signed [7:0] p10,      p12,  // middle row (excluding center)
-  input  logic signed [7:0] p20, p21, p22,  // bottom row
-
-  input  logic use_threshold,              // Enable thresholding
-  output logic        edge,                // 1 if edge detected (optional)
-  output logic signed [15:0] gx,           // horizontal gradient
-  output logic signed [15:0] gy,           // vertical gradient
-  output logic [15:0] magnitude            // |gx| + |gy| (approximate) THIS WE WRITE TO MEMORY
+  output logic [31:0] wdata_o       // Output: 4 packed thresholded pixels
 );
 
-  // Sobel Gx:
-  // [-1  0  +1]
-  // [-2  0  +2]
-  // [-1  0  +1]
-  assign gx = -p00 + p02
-            - (p10 <<< 1) + (p12 <<< 1)
-            - p20 + p22;
+  // Unpack input pixels
+  logic [7:0] pixel0, pixel1, pixel2, pixel3;
+  assign pixel0 = rpixels[7:0];
+  assign pixel1 = rpixels[15:8];
+  assign pixel2 = rpixels[23:16];
+  assign pixel3 = rpixels[31:24];
 
-  // Sobel Gy:
-  // [-1 -2 -1]
-  // [ 0  0  0]
-  // [+1 +2 +1]
-  assign gy = -p00 - (p01 <<< 1) - p02
-            + p20 + (p21 <<< 1) + p22;
+  // Thresholded output pixels
+  logic [7:0] out0, out1, out2, out3;
 
-  // Magnitude approximation
-  logic [15:0] abs_gx, abs_gy;
-  assign abs_gx = gx[15] ? -gx : gx;
-  assign abs_gy = gy[15] ? -gy : gy;
-  assign magnitude = abs_gx + abs_gy;
+  always_comb begin
+    if (is_valid) begin
+      out0 = (pixel0 > threshold) ? 8'hFF : 8'h00;
+      out1 = (pixel1 > threshold) ? 8'hFF : 8'h00;
+      out2 = (pixel2 > threshold) ? 8'hFF : 8'h00;
+      out3 = (pixel3 > threshold) ? 8'hFF : 8'h00;
+    end else begin
+      out0 = 8'h00;
+      out1 = 8'h00;
+      out2 = 8'h00;
+      out3 = 8'h00;
+    end
+  end
 
-  // Optional edge output
-  assign edge = use_threshold && (magnitude > THRESHOLD);
+  // Pack result back into 32-bit word
+  assign wdata_o = {out3, out2, out1, out0};
 
 endmodule

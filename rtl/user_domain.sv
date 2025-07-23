@@ -30,7 +30,7 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
   // User Manager MUX //
   /////////////////////
 
-  assign user_mgr_obi_req_o = '0; // this needs to be attached as an output of the module
+  //assign user_mgr_obi_req_o = '0; // this needs to be attached as an output of the module
 
   ////////////////////////////
   // User Subordinate DEMUX //
@@ -122,6 +122,22 @@ module user_domain import user_pkg::*; import croc_pkg::*; #(
     .obi_rsp_o  ( user_error_obi_rsp )
   );
 
-  
+  // TODO Instantiate user_top_module
+
+    user_top_module #(
+    .ObiCfg(SbrObiCfg),
+    .sbr_obi_req_t(sbr_obi_req_t),
+    .sbr_obi_rsp_t(sbr_obi_rsp_t),
+    .mgr_obi_rsp_t(mgr_obi_rsp_t),
+    .mgr_obi_req_t(mgr_obi_req_t)
+  ) i_user_top_module (
+    .clk_i(clk_i),
+    .rst_ni(rst_ni),
+    .obi_sbr_req_i(user_edm_obi_req),
+    .obi_sbr_rsp_o(user_edm_obi_rsp),
+    .obi_mgr_req_o(user_mgr_obi_req_o),
+    .obi_mgr_rsp_i(user_mgr_obi_rsp_i)
+  );
+
 
 endmodule

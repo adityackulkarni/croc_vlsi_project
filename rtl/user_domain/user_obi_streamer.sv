@@ -1,14 +1,6 @@
 // gives us the `FF(...) macro making it easy to have properly defined flip-flops
 `include "common_cells/registers.svh"
 
-// This module is supposed to issue 8 read transactions via OBI to SRAM0. 
-// Will require internal FSM.
-
-// TODO: Ask how are the pixels stored in memory
-// If it's 8 bits, 8 bits 8 bits, then we need 2 OBI read requests per one Sobel kernel (8 pixels)
-// If it's 8 bits 24 zeros 8 bits 24 zeros then we need 8 OBI read requests per one Sobel kernel
-// Actually, I think we need 8 transactions anyway because we are not reading consecutive 8 bits in memory
-
 module user_obi_streamer #(
   /// The OBI configuration for all ports.
   parameter obi_pkg::obi_cfg_t           ObiCfg      = obi_pkg::ObiDefaultConfig,
@@ -17,75 +9,124 @@ module user_obi_streamer #(
   /// The response struct.
   parameter type                         obi_rsp_t   = logic
 ) (
-  /// Clock
+  /// Clock and Reset
   input  logic clk_i,
-  /// Active-low reset
   input  logic rst_ni,
+  
+  /// Stream Control
+  input logic is_req_i,                         // control signal -> HIGH = move to ADDR_PHASE
+  input logic is_write_i,                       // control signal -> LOW => mode = READ, HIGH => mode = WRITE
 
-  /// OBI request interface
-  input  obi_req_t obi_rsp_i,
+  /// Address and Data to READ/WRITE
+  input logic [ObiCfg.AddrWidth-1:0] rw_addr_i, // if (mode == READ) then read from rw_addr_i, else write to rw_addr_i
+  input logic [ObiCfg.DataWidth-1:0] wdata_i,   // if (mode == WRITE) then write wdata_i to SRAM0 via OBI, else this is zero
+
+  /// Output to the Compute Module
+  output logic [ObiCfg.DataWidth-1:0] rpixels,  // 32 bits of 4 pixels passed to compute module
+  output logic is_valid,                        // valid signal to make sure compute module performs computation on valid data
+
   /// OBI response interface
-  output obi_rsp_t obi_req_o
+  input  obi_rsp_t obi_rsp_i,
+  /// OBI request interface
+  output obi_req_t obi_req_o
 );
 
-// Define some registers to hold the requests fields
-logic req_d, req_q;
-logic we_d, we_q;
-logic [ObiCfg.AddrWidth-1:0] addr_d, addr_q;
+/// DECLARE SIGNALS FOR OBI RESPONSE ///
+logic rvalid_d, rvalid_q;
+logic gnt_d, gnt_q;
+logic [ObiCfg.DataWidth-1:0] rdata_d, rdata_q;
+logic err_d, err_q;
 logic [ObiCfg.IdWidth-1:0] id_d, id_q;
-logic [ObiCfg.DataWidth-1:0] wdata_d, wdata_q;
 
-// Signals used to create the response
-logic [ObiCfg.DataWidth-1:0] rsp_data; // Data field of the obi response
-logic rsp_err; // Error field of the obi response
+`FF(rvalid_q, rvalid_d, '0);
+`FF(gnt_q,    gnt_d,    '0);
+`FF(rdata_q,  rdata_d,  '0);
+`FF(err_q,    err_d,    '0);
+`FF(id_q,     id_d,     '0);
 
-// Internal signals/registers
-logic [15:0] set_bits_accumulator_d, set_bits_accumulator_q; // Holding the accumulated bitcount
-logic [15:0] wdata_cnt; // Olding the bitcount of the request wdata
+assign rvalid_d = obi_rsp_i.rvalid;
+assign gnt_d    = obi_rsp_i.gnt;
+assign rdata_d  = obi_rsp_i.r.rdata;
+assign err_d    = obi_rsp_i.r.err;
+assign id_d     = obi_rsp_i.r.rid;
 
-// Note to avoid writing trivial always_ff statements we can use this macro defined in registers.svh 
-`FF(req_q, req_d, '0);
-`FF(id_q , id_d , '0);
-`FF(we_q , we_d , '0);
-`FF(wdata_q , wdata_d , '0);
-`FF(addr_q , addr_d , '0);
-`FF(set_bits_accumulator_q, set_bits_accumulator_d, '0);
-
-assign req_d = obi_req_i.req;
-assign id_d = obi_req_i.a.aid;
-assign we_d = obi_req_i.a.we;
-assign addr_d = obi_req_i.a.addr;
-assign wdata_d = obi_req_i.a.wdata;
-
-// TODO: write a main always_comb block -> something like this
-// After the RESP_PHASE we have access to the data we wanted
+/// FSM State Declaration ///
 typedef enum logic [1:0] {
-    IDLE, ADDR_PHASE, RESP_PHASE
+  IDLE, ADDR_PHASE, RESP_PHASE
 } state_t;
- state_t state_q, state_d;
 
+state_t state_q, state_d;
+`FF(state_q, state_d, IDLE);
+
+/// Latched OBI Request Info ///
+logic req_we_d, req_we_q;
+logic [ObiCfg.AddrWidth-1:0] req_addr_d, req_addr_q;
+logic [ObiCfg.DataWidth-1:0] req_data_d, req_data_q;
+
+`FF(req_we_q,   req_we_d,   '0);
+`FF(req_addr_q, req_addr_d, '0);
+`FF(req_data_q, req_data_d, '0);
+
+/// Latched Control Inputs ///
+logic is_req_d, is_req_q;
+logic is_write_d, is_write_q;
+
+`FF(is_req_q,    is_req_d,    '0);
+`FF(is_write_q,  is_write_d,  '0);
+
+assign is_req_d    = is_req_i;
+assign is_write_d  = is_write_i;
+
+/// FSM Logic ///
 always_comb begin
-state_d = state_q;
-    case (state_q)
-        IDLE: // if manager asserts req then the address phase over A channel starts
-        if (obi_req_i.req) state_d = ADDR_PHASE;
+  state_d = state_q;
 
-        ADDR_PHASE:
-        if (obi_gnt) next_state = WAIT_RESP;
+  // Default: keep latched request values
+  req_we_d    = req_we_q;
+  req_addr_d  = req_addr_q;
+  req_data_d  = req_data_q;
 
-        RESP_PHASE:
-        if (obi_rvalid) next_state = IDLE;
-    endcase
+  case (state_q)
+
+    IDLE: begin
+      if (is_req_q) begin
+        req_we_d    = is_write_q;
+        req_addr_d  = rw_addr_i;
+        req_data_d  = is_write_q ? wdata_i : '0;
+        state_d     = ADDR_PHASE;
+      end
+    end
+
+    ADDR_PHASE: begin
+      if (gnt_q) begin
+        state_d = RESP_PHASE;
+      end
+    end
+
+    RESP_PHASE: begin
+      if (rvalid_q) begin
+        state_d = IDLE;
+      end
+    end
+
+    default: state_d = IDLE;
+
+  endcase
 end
 
-// Wire the response
-// A channel
-assign obi_rsp_o.gnt = obi_req_i.req;
-// R channel:
-assign obi_rsp_o.rvalid = req_q;
-assign obi_rsp_o.r.rdata = rsp_data;
-assign obi_rsp_o.r.rid = id_q;
-assign obi_rsp_o.r.err = rsp_err;
-assign obi_rsp_o.r.r_optional = '0;
+/// OBI REQUEST ASSIGNMENTS ///
+assign obi_req_o.req     = (state_q == ADDR_PHASE);
+
+assign obi_req_o.a.addr  = req_addr_q;
+assign obi_req_o.a.we    = req_we_q;
+assign obi_req_o.a.be    = '1; // Full word access
+assign obi_req_o.a.wdata = req_data_q;
+assign obi_req_o.a.aid   = '0; // Unused
+
+/// COMPUTE MODULE OUTPUTS ///
+assign rpixels  = rdata_q;
+assign is_valid = (state_q == RESP_PHASE) && rvalid_q;
+
+
 
 endmodule
