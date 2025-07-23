@@ -8,11 +8,11 @@
 `define TRACE_WAVE
 
 module tb_croc_soc #(
-    parameter time         ClkPeriod     = 100ns,
-    parameter time         ClkPeriodJtag = 100ns,
+    parameter time         ClkPeriod     = 50ns,
+    parameter time         ClkPeriodJtag = 50ns,
     parameter time         ClkPeriodRef  = 30518ns,
-    parameter time         TAppl         = 20ns,
-    parameter time         TTest         = 80ns,
+    parameter time         TAppl         = 0.2*ClkPeriod,
+    parameter time         TTest         = 0.8*ClkPeriod,
     parameter int unsigned RstCycles     = 1,
     // UART
     parameter int unsigned  UartBaudRate      = 115200,
@@ -36,7 +36,7 @@ module tb_croc_soc #(
     logic fetch_en_i;
     logic status_o;
 
-    localparam int unsigned GpioCount = 16;
+    localparam int unsigned GpioCount = 32;
 
     logic [GpioCount-1:0] gpio_i;             
     logic [GpioCount-1:0] gpio_o;            
@@ -210,7 +210,7 @@ module tb_croc_soc #(
         if (check_write) begin
             logic [31:0] rdata;
             jtag_read_reg32(addr, rdata);
-            if (rdata != data) $fatal(1,"@%t | [JTAG] Read back incorrect data 0x%h!", $time, rdata);
+            if (rdata !== data) $fatal(1,"@%t | [JTAG] Read back incorrect data 0x%h!", $time, rdata);
             else $display("@%t | [JTAG] Read back correct data", $time);
         end
     endtask
@@ -445,7 +445,7 @@ module tb_croc_soc #(
         // `ifdef TRACE_WAVE
         // $dumpfile("croc.vcd");
         // $dumpvars(1,i_croc_soc);
-        // `endif
+        //endif
 
         uart_rx_i  = 1'b0;
         fetch_en_i = 1'b0;
@@ -456,21 +456,22 @@ module tb_croc_soc #(
         // init jtag
         jtag_init();
 
+        // write test value to sram
+        jtag_write_reg32(croc_pkg::SramBaseAddr, 32'h1234_5678, 1'b1);
+        // load binary to sram
+        jtag_load_hex(binary_path);
+
         $display("@%t | [CORE] Start fetching instructions", $time);
         fetch_en_i = 1'b1;
 
         // halt core
         jtag_halt();
 
-        // write test value to sram
-        jtag_write_reg32(croc_pkg::SramBaseAddr, 32'h1234_5678, 1'b1);
-        // load binary to sram
-        jtag_load_hex(binary_path);
-
         // resume core
         jtag_resume();
 
         // wait for non-zero return value (written into core status register)
+        $display("@%t | [CORE] Wait for end of code...", $time);
         jtag_wait_for_eoc(tb_data);
 
         // finish simulation
@@ -479,24 +480,6 @@ module tb_croc_soc #(
         $dumpflush;
         `endif
         $finish();
-    end
-
-    // Used to generate short traces for student task
-    initial begin
-        `ifdef TRACE_WAVE_SHORT
-        #6525250ns;
-        $dumpfile("croc_short.vcd");
-
-        $dumpvars(1,TOP.tb_croc_soc.i_croc_soc.i_croc.clk_i);
-        $dumpvars(1,TOP.tb_croc_soc.i_croc_soc.i_croc.core_data_obi_req);
-        $dumpvars(1,TOP.tb_croc_soc.i_croc_soc.i_croc.core_data_obi_rsp);
-        $dumpvars(1,TOP.tb_croc_soc.i_croc_soc.i_user.user_sbr_obi_req_i);
-        $dumpvars(1,TOP.tb_croc_soc.i_croc_soc.i_user.user_sbr_obi_rsp_o);
-
-        $dumpflush;
-        #2300ns;
-        $finish();
-        `endif
     end
 
 endmodule

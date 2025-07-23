@@ -18,8 +18,8 @@
 #define USER_SETBITCOUNT_BASE_ADDR 0x20001000
 
 // Frequencies
-#define TB_FREQUENCY 10000000
-#define TB_BAUDRATE    115200
+#define TB_FREQUENCY 20000000
+#define TB_BAUDRATE    125000
 
 // Peripheral configs
 // UART
