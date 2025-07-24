@@ -27,18 +27,7 @@ int main() {
     uart_init();
 
     printf("He%xo World!\n", 0x11);
-
-    // Test if you can read/write ANY peripheral
-    printf("Testing GPIO at 0x%x...\n", GPIO_BASE_ADDR);
-    uint8_t gpio_test = *reg8(GPIO_BASE_ADDR, GPIO_IN_REG_OFFSET);
-    printf("GPIO read succeeded: 0x%x\n", gpio_test);
-
-    // Test if ANY access to edge detect region works
-    volatile uint32_t *test_addr = (volatile uint32_t*)(USER_SETBITCOUNT_BASE_ADDR);
-    printf("Attempting bare read at 0x%x...\n", test_addr);
-    uint32_t test_val = *test_addr;  // Raw pointer access
-    printf("Bare read got: 0x%x\n", test_val);
-
+    
     uart_write_flush();
     *reg8(GPIO_BASE_ADDR, GPIO_DIR_REG_OFFSET) = 0x0F; // lowest four as outputs
     *reg8(GPIO_BASE_ADDR, GPIO_OUT_REG_OFFSET) = 0x0A; // ready output pattern
